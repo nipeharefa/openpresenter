@@ -20,3 +20,13 @@ export interface LiveView {
   black: boolean;
   items: LiveItem[];
 }
+
+export interface MonitorInfo {
+  name: string | null;
+  width: number;
+  height: number;
+  x: number;
+  y: number;
+  scaleFactor: number;
+  isPrimary: boolean;
+}

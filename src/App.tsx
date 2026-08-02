@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, onLiveChange } from "./lib/api";
-import type { LiveView, Urutan } from "./types";
+import type { LiveView, MonitorInfo, Urutan } from "./types";
 
 type Mode = "edit" | "live";
 
@@ -13,10 +13,14 @@ export default function App() {
   const [mode, setMode] = useState<Mode>("edit");
   const [selectedItemId, setSelectedItemId] = useState<number | null>(null);
   const [newName, setNewName] = useState("");
+  const [monitors, setMonitors] = useState<MonitorInfo[]>([]);
+  const [projectionMonitor, setProjectionMonitorState] = useState<string>("");
 
   useEffect(() => {
     api.listUrutan().then(setUrutans);
     api.getLive().then(setLive);
+    api.listMonitors().then(setMonitors);
+    api.getProjectionMonitor().then((name) => setProjectionMonitorState(name ?? ""));
     let unlisten: (() => void) | undefined;
     onLiveChange(setLive).then((fn) => (unlisten = fn));
     return () => unlisten?.();
@@ -108,7 +112,31 @@ export default function App() {
             Live
           </button>
         </div>
-        <button onClick={() => api.openProjection()}>Buka Proyeksi</button>
+        <select
+          className="topbar__select"
+          value={projectionMonitor}
+          onChange={(e) => {
+            const value = e.target.value;
+            setProjectionMonitorState(value);
+            api.setProjectionMonitor(value || null);
+          }}
+          disabled={monitors.length === 0}
+          title="Monitor untuk Window Proyeksi"
+        >
+          <option value="">Proyeksi: Otomatis</option>
+          {monitors.map((m) => (
+            <option
+              key={m.name ?? `${m.x},${m.y}`}
+              value={m.name ?? ""}
+            >
+              {m.name ?? "Monitor"} {m.width}×{m.height}
+              {m.isPrimary ? " (primary)" : ""}
+            </option>
+          ))}
+        </select>
+        <button onClick={() => api.openProjection(projectionMonitor || null)}>
+          Buka Proyeksi
+        </button>
       </header>
 
       {mode === "edit" ? (

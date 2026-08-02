@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import type { LiveView, Urutan } from "../types";
+import type { LiveView, MonitorInfo, Urutan } from "../types";
 
 export const api = {
   listUrutan: () => invoke<Urutan[]>("list_urutan"),
@@ -18,7 +18,12 @@ export const api = {
   prevSlide: () => invoke<void>("prev_slide"),
   jumpItem: (index: number) => invoke<void>("jump_item", { index }),
   toggleBlack: () => invoke<void>("toggle_black"),
-  openProjection: () => invoke<void>("open_projection"),
+  openProjection: (monitor: string | null) =>
+    invoke<void>("open_projection", { monitor }),
+  listMonitors: () => invoke<MonitorInfo[]>("list_monitors"),
+  getProjectionMonitor: () => invoke<string | null>("get_projection_monitor"),
+  setProjectionMonitor: (name: string | null) =>
+    invoke<void>("set_projection_monitor", { name }),
   getLive: () => invoke<LiveView>("get_live"),
 };
 

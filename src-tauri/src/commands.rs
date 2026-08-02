@@ -1,8 +1,12 @@
 use std::sync::Mutex;
 
-use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
+use tauri::{
+    AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, State, WebviewUrl,
+    WebviewWindow, WebviewWindowBuilder,
+};
 
 use crate::db;
+use crate::monitor::{self, MonitorInfo};
 use crate::state::{LiveItem, LiveState, LiveView};
 
 fn emit_view(app: &AppHandle, state: &LiveState) -> Result<(), String> {
@@ -205,19 +209,89 @@ pub fn get_live(state: State<'_, Mutex<LiveState>>) -> LiveView {
 }
 
 #[tauri::command]
-pub fn open_projection(app: AppHandle) -> Result<(), String> {
+pub fn list_monitors(app: AppHandle) -> Result<Vec<MonitorInfo>, String> {
+    let monitors = app.available_monitors().map_err(|e| e.to_string())?;
+    let primary = app.primary_monitor().map_err(|e| e.to_string())?;
+    Ok(monitors
+        .iter()
+        .map(|m| MonitorInfo::from_monitor(m, primary.as_ref()))
+        .collect())
+}
+
+#[tauri::command]
+pub fn open_projection(app: AppHandle, monitor: Option<String>) -> Result<(), String> {
+    let target = resolve_monitor_target(&app, monitor.as_deref())?;
     if let Some(window) = app.get_webview_window("projection") {
+        place_projection(&window, target.as_ref())?;
         window.show().map_err(|e| e.to_string())?;
         window.set_focus().map_err(|e| e.to_string())?;
         return Ok(());
     }
-    WebviewWindowBuilder::new(&app, "projection", WebviewUrl::App("index.html".into()))
+    let (x, y, width, height) = match &target {
+        Some(m) => (
+            m.x as f64 / m.scale_factor,
+            m.y as f64 / m.scale_factor,
+            m.width as f64 / m.scale_factor,
+            m.height as f64 / m.scale_factor,
+        ),
+        None => (0.0, 0.0, 1280.0, 720.0),
+    };
+    let window = WebviewWindowBuilder::new(&app, "projection", WebviewUrl::App("index.html".into()))
         .title("OpenPresenter - Proyeksi")
-        .inner_size(1280.0, 720.0)
-        .fullscreen(true)
+        .inner_size(width, height)
+        .position(x, y)
         .background_color(tauri::window::Color(0, 0, 0, 255))
         .build()
         .map_err(|e| e.to_string())?;
+    window.set_fullscreen(true).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn set_projection_monitor(app: AppHandle, name: Option<String>) -> Result<(), String> {
+    let conn = db::connect(&app).map_err(db_error)?;
+    db::set_meta(&conn, "projection_monitor", name.as_deref().unwrap_or(""))
+        .map_err(db_error)?;
+    let target = resolve_monitor_target(&app, name.as_deref())?;
+    if let Some(window) = app.get_webview_window("projection") {
+        place_projection(&window, target.as_ref())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn get_projection_monitor(app: AppHandle) -> Result<Option<String>, String> {
+    let conn = db::connect(&app).map_err(db_error)?;
+    let value = db::get_meta(&conn, "projection_monitor").map_err(db_error)?;
+    Ok(value.filter(|s| !s.is_empty()))
+}
+
+fn resolve_monitor_target(
+    app: &AppHandle,
+    preferred: Option<&str>,
+) -> Result<Option<MonitorInfo>, String> {
+    let monitors = app.available_monitors().map_err(|e| e.to_string())?;
+    let primary = app.primary_monitor().map_err(|e| e.to_string())?;
+    let infos: Vec<MonitorInfo> = monitors
+        .iter()
+        .map(|m| MonitorInfo::from_monitor(m, primary.as_ref()))
+        .collect();
+    Ok(monitor::pick_target_monitor(preferred, &infos).map(|i| infos[i].clone()))
+}
+
+fn place_projection(window: &WebviewWindow, target: Option<&MonitorInfo>) -> Result<(), String> {
+    if window.is_fullscreen().unwrap_or(false) {
+        window.set_fullscreen(false).map_err(|e| e.to_string())?;
+    }
+    if let Some(m) = target {
+        window
+            .set_position(PhysicalPosition::new(m.x, m.y))
+            .map_err(|e| e.to_string())?;
+        window
+            .set_size(PhysicalSize::new(m.width, m.height))
+            .map_err(|e| e.to_string())?;
+    }
+    window.set_fullscreen(true).map_err(|e| e.to_string())?;
     Ok(())
 }
 
