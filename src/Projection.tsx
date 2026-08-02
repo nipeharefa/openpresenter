@@ -15,8 +15,15 @@ export default function Projection() {
   const black = !live || !live.loaded || live.black;
 
   return (
-    <div className={black ? "proj proj--black" : "proj"}>
-      {!black && <div className="proj__slide">{live?.slideText}</div>}
+    <div className="proj">
+      {!black && (
+        <div
+          key={`${live?.itemIndex}:${live?.slideIndex}`}
+          className="proj__slide"
+        >
+          {live?.slideText}
+        </div>
+      )}
     </div>
   );
 }
