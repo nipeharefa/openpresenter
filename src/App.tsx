@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, onLiveChange } from "./lib/api";
+import { api, onLiveChange, onProjectionChange } from "./lib/api";
 import { splitSlides } from "./lib/slides";
 import type { LiveView, MonitorInfo, Urutan } from "./types";
 
@@ -17,6 +17,7 @@ export default function App() {
   const [addingUrutan, setAddingUrutan] = useState(false);
   const [monitors, setMonitors] = useState<MonitorInfo[]>([]);
   const [projectionMonitor, setProjectionMonitorState] = useState<string>("");
+  const [projectionOpen, setProjectionOpen] = useState(false);
 
   const newNameRef = useRef<HTMLInputElement>(null);
 
@@ -25,9 +26,15 @@ export default function App() {
     api.getLive().then(setLive);
     api.listMonitors().then(setMonitors);
     api.getProjectionMonitor().then((name) => setProjectionMonitorState(name ?? ""));
+    api.getProjectionOpen().then(setProjectionOpen);
     let unlisten: (() => void) | undefined;
+    let unlistenProj: (() => void) | undefined;
     onLiveChange(setLive).then((fn) => (unlisten = fn));
-    return () => unlisten?.();
+    onProjectionChange(setProjectionOpen).then((fn) => (unlistenProj = fn));
+    return () => {
+      unlisten?.();
+      unlistenProj?.();
+    };
   }, []);
 
   useEffect(() => {
@@ -198,7 +205,7 @@ export default function App() {
           onDelete={handleDeleteItem}
         />
       ) : (
-        <LiveView live={live} onStop={() => setMode("edit")} />
+        <LiveView live={live} projectionOpen={projectionOpen} onStop={() => setMode("edit")} />
       )}
     </div>
   );
@@ -332,8 +339,12 @@ function EditView(props: {
   );
 }
 
-function LiveView(props: { live: LiveView | null; onStop: () => void }) {
-  const { live, onStop } = props;
+function LiveView(props: {
+  live: LiveView | null;
+  projectionOpen: boolean;
+  onStop: () => void;
+}) {
+  const { live, projectionOpen, onStop } = props;
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -350,13 +361,14 @@ function LiveView(props: { live: LiveView | null; onStop: () => void }) {
       } else if (e.key === "b" || e.key === "B") {
         api.toggleBlack();
       } else if (e.key === "Escape") {
+        if (!projectionOpen) return;
         api.stopLive();
         onStop();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onStop]);
+  }, [onStop, projectionOpen]);
 
   if (!live?.loaded) {
     return (
@@ -429,6 +441,8 @@ function LiveView(props: { live: LiveView | null; onStop: () => void }) {
           </button>
           <button
             className="ctrl ctrl--stop"
+            disabled={!projectionOpen}
+            title={projectionOpen ? "" : "Buka Proyeksi dulu"}
             onClick={() => {
               api.stopLive();
               onStop();

@@ -6,13 +6,20 @@ mod state;
 
 use std::sync::Mutex;
 
-use tauri::Manager;
+use tauri::{Manager, WindowEvent};
 use state::LiveState;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .manage(Mutex::new(LiveState::new()))
+        .on_window_event(|window, event| {
+            if window.label() == "projection"
+                && matches!(event, WindowEvent::CloseRequested { .. })
+            {
+                commands::on_projection_close(window);
+            }
+        })
         .setup(|app| {
             let handle = app.handle();
             let conn = db::connect(handle).map_err(|e| e.to_string())?;
@@ -53,6 +60,7 @@ pub fn run() {
             commands::get_live,
             commands::open_projection,
             commands::close_projection,
+            commands::get_projection_open,
             commands::list_monitors,
             commands::set_projection_monitor,
             commands::get_projection_monitor,
