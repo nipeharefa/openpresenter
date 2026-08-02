@@ -248,6 +248,14 @@ pub fn open_projection(app: AppHandle, monitor: Option<String>) -> Result<(), St
 }
 
 #[tauri::command]
+pub fn close_projection(app: AppHandle) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window("projection") {
+        window.close().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
 pub fn set_projection_monitor(app: AppHandle, name: Option<String>) -> Result<(), String> {
     let conn = db::connect(&app).map_err(db_error)?;
     db::set_meta(&conn, "projection_monitor", name.as_deref().unwrap_or(""))

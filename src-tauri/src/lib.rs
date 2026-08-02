@@ -52,6 +52,7 @@ pub fn run() {
             commands::toggle_black,
             commands::get_live,
             commands::open_projection,
+            commands::close_projection,
             commands::list_monitors,
             commands::set_projection_monitor,
             commands::get_projection_monitor,

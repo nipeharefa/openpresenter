@@ -20,6 +20,7 @@ export const api = {
   toggleBlack: () => invoke<void>("toggle_black"),
   openProjection: (monitor: string | null) =>
     invoke<void>("open_projection", { monitor }),
+  stopLive: () => invoke<void>("close_projection"),
   listMonitors: () => invoke<MonitorInfo[]>("list_monitors"),
   getProjectionMonitor: () => invoke<string | null>("get_projection_monitor"),
   setProjectionMonitor: (name: string | null) =>

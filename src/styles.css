@@ -297,6 +297,16 @@ select {
   border-color: var(--danger);
 }
 
+.ctrl--stop {
+  background: var(--danger);
+  color: #fff;
+  border-color: var(--danger);
+}
+
+.ctrl--stop:hover {
+  filter: brightness(1.1);
+}
+
 /* Projection window */
 .proj {
   width: 100%;

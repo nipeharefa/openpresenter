@@ -149,7 +149,7 @@ export default function App() {
           onDelete={handleDeleteItem}
         />
       ) : (
-        <LiveView live={live} />
+        <LiveView live={live} onStop={() => setMode("edit")} />
       )}
     </div>
   );
@@ -270,8 +270,8 @@ function EditView(props: {
   );
 }
 
-function LiveView(props: { live: LiveView | null }) {
-  const { live } = props;
+function LiveView(props: { live: LiveView | null; onStop: () => void }) {
+  const { live, onStop } = props;
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -287,11 +287,14 @@ function LiveView(props: { live: LiveView | null }) {
         api.prevSlide();
       } else if (e.key === "b" || e.key === "B") {
         api.toggleBlack();
+      } else if (e.key === "Escape") {
+        api.stopLive();
+        onStop();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [onStop]);
 
   if (!live?.loaded) {
     return (
@@ -343,9 +346,18 @@ function LiveView(props: { live: LiveView | null }) {
           <button className="ctrl ctrl--next" onClick={() => api.nextSlide()}>
             Next →
           </button>
+          <button
+            className="ctrl ctrl--stop"
+            onClick={() => {
+              api.stopLive();
+              onStop();
+            }}
+          >
+            Stop Live
+          </button>
         </div>
         <p className="muted">
-          Space/Enter = next · Backspace = prev · B = black
+          Space/Enter = next · Backspace = prev · B = black · Esc = stop live
         </p>
       </main>
     </div>
