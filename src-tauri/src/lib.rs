@@ -12,6 +12,7 @@ use state::LiveState;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .manage(Mutex::new(LiveState::new()))
         .on_window_event(|window, event| {
             if window.label() == "projection"
@@ -81,6 +82,8 @@ pub fn run() {
             commands::add_item_tag,
             commands::remove_item_tag,
             commands::add_library_item_to_urutan,
+            commands::import_media,
+            commands::set_slide_background,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

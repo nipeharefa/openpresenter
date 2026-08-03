@@ -1,9 +1,11 @@
 use std::sync::Mutex;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use tauri::{
     AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, State, WebviewUrl,
     WebviewWindow, WebviewWindowBuilder,
 };
+use tauri_plugin_dialog::DialogExt;
 
 use crate::db;
 use crate::monitor::{self, MonitorInfo};
@@ -26,6 +28,36 @@ fn to_live_item(item: db::Item) -> LiveItem {
         kind: item.kind,
         slides: item.slides,
     }
+}
+
+fn media_abs_path(app: &AppHandle, stored_name: &str) -> String {
+    app.path()
+        .app_data_dir()
+        .unwrap()
+        .join("media")
+        .join(stored_name)
+        .to_string_lossy()
+        .into_owned()
+}
+
+fn resolve_item_paths(app: &AppHandle, items: &mut [db::Item]) {
+    for item in items.iter_mut() {
+        for slide in item.slides.iter_mut() {
+            if let Some(bg) = &mut slide.background {
+                if !bg.stored_name.is_empty() {
+                    bg.path = media_abs_path(app, &bg.stored_name);
+                }
+            }
+        }
+    }
+}
+
+fn unique_name(ext: &str) -> String {
+    let ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    format!("{}_{}.{}", std::process::id(), ms, ext)
 }
 
 #[tauri::command]
@@ -71,7 +103,8 @@ pub fn load_urutan(
     let urutan = db::get_urutan(&conn, id)
         .map_err(db_error)?
         .ok_or_else(|| "urutan tidak ditemukan".to_string())?;
-    let items = db::list_items(&conn, id).map_err(db_error)?;
+    let mut items = db::list_items(&conn, id).map_err(db_error)?;
+    resolve_item_paths(&app, &mut items);
     db::set_meta(&conn, "last_urutan", &id.to_string()).map_err(db_error)?;
 
     let mut live = state.lock().unwrap();
@@ -109,10 +142,11 @@ pub fn save_item(
 ) -> Result<db::Item, String> {
     let conn = db::connect(&app).map_err(db_error)?;
     let existing = db::get_item(&conn, id).map_err(db_error)?;
-    let item = match existing {
+    let mut item = match existing {
         Some(item) if item.library_item_id.is_some() => item,
         _ => db::save_item(&conn, id, &title, &text).map_err(db_error)?,
     };
+    resolve_item_paths(&app, std::slice::from_mut(&mut item));
     let mut live = state.lock().unwrap();
     if live.urutan_id == Some(item.urutan_id) {
         if let Some(current) = live.items.iter_mut().find(|i| i.id == id) {
@@ -360,7 +394,8 @@ fn reload_if_current(
         return Ok(());
     }
     let conn = db::connect(app).map_err(db_error)?;
-    let items = db::list_items(&conn, urutan_id).map_err(db_error)?;
+    let mut items = db::list_items(&conn, urutan_id).map_err(db_error)?;
+    resolve_item_paths(app, &mut items);
     live.items = items.into_iter().map(to_live_item).collect();
     if live.item_index >= live.items.len() {
         live.item_index = live.items.len().saturating_sub(1);
@@ -401,7 +436,13 @@ pub fn list_library(
 #[tauri::command]
 pub fn get_library_item(app: AppHandle, id: i64) -> Result<Option<db::LibraryItemDetail>, String> {
     let conn = db::connect(&app).map_err(db_error)?;
-    db::get_library_item_detail(&conn, id).map_err(db_error)
+    let mut detail = db::get_library_item_detail(&conn, id).map_err(db_error)?;
+    if let Some(d) = &mut detail {
+        if let Some(m) = &mut d.media {
+            m.path = media_abs_path(&app, &m.stored_name);
+        }
+    }
+    Ok(detail)
 }
 
 #[tauri::command]
@@ -436,7 +477,12 @@ pub fn delete_library_item(
     id: i64,
 ) -> Result<(), String> {
     let conn = db::connect(&app).map_err(db_error)?;
-    db::delete_library_item(&conn, id).map_err(db_error)?;
+    let stored = db::delete_library_item(&conn, id).map_err(db_error)?;
+    if let Some(stored_name) = stored {
+        let _ = std::fs::remove_file(
+            app.path().app_data_dir().unwrap().join("media").join(stored_name),
+        );
+    }
     if let Some(urutan_id) = current_urutan_if_refs_item(&app, id) {
         reload_if_current(&app, &state, urutan_id)?;
     }
@@ -555,7 +601,77 @@ pub fn add_library_item_to_urutan(
     library_item_id: i64,
 ) -> Result<db::Item, String> {
     let conn = db::connect(&app).map_err(db_error)?;
-    let item = db::add_library_item_to_urutan(&conn, urutan_id, library_item_id).map_err(db_error)?;
+    let mut item =
+        db::add_library_item_to_urutan(&conn, urutan_id, library_item_id).map_err(db_error)?;
+    resolve_item_paths(&app, std::slice::from_mut(&mut item));
     reload_if_current(&app, &state, urutan_id)?;
     Ok(item)
+}
+
+/* ---------- Media (phase 1.9) ---------- */
+
+#[tauri::command]
+pub fn import_media(app: AppHandle) -> Result<db::LibraryItem, String> {
+    let file = app
+        .dialog()
+        .file()
+        .add_filter(
+            "Media",
+            &["png", "jpg", "jpeg", "gif", "webp", "mp4", "mov", "webm", "mkv"],
+        )
+        .blocking_pick_file()
+        .ok_or_else(|| "dibatalkan".to_string())?;
+    let path = file.into_path().map_err(|e| e.to_string())?;
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+    let media_type = if matches!(ext.as_str(), "mp4" | "mov" | "webm" | "mkv") {
+        "video"
+    } else {
+        "image"
+    };
+    let file_name = path
+        .file_name()
+        .and_then(|f| f.to_str())
+        .unwrap_or("media")
+        .to_string();
+    let title = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("Media")
+        .to_string();
+    let stored = unique_name(&ext);
+
+    let media_dir = app.path().app_data_dir().unwrap().join("media");
+    std::fs::create_dir_all(&media_dir).map_err(|e| e.to_string())?;
+    std::fs::copy(&path, media_dir.join(&stored)).map_err(|e| e.to_string())?;
+
+    let conn = db::connect(&app).map_err(db_error)?;
+    db::create_media(&conn, &title, media_type, &file_name, &stored).map_err(db_error)
+}
+
+#[tauri::command]
+pub fn set_slide_background(
+    app: AppHandle,
+    state: State<'_, Mutex<LiveState>>,
+    slide_id: i64,
+    media_item_id: Option<i64>,
+) -> Result<(), String> {
+    let conn = db::connect(&app).map_err(db_error)?;
+    db::set_slide_background(&conn, slide_id, media_item_id).map_err(db_error)?;
+    let item_id: Option<i64> = conn
+        .query_row(
+            "SELECT item_id FROM presentation_slide WHERE id = ?1",
+            rusqlite::params![slide_id],
+            |r| r.get(0),
+        )
+        .ok();
+    if let Some(item_id) = item_id {
+        if let Some(urutan_id) = current_urutan_if_refs_item(&app, item_id) {
+            reload_if_current(&app, &state, urutan_id)?;
+        }
+    }
+    Ok(())
 }

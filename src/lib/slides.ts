@@ -14,5 +14,7 @@ export function itemSlideCount(item: LiveItem): number {
 }
 
 export function kindLabel(kind: string | null | undefined): string {
-  return kind === "presentation" ? "Presentasi" : "Lagu";
+  if (kind === "presentation") return "Presentasi";
+  if (kind === "media") return "Media";
+  return "Lagu";
 }

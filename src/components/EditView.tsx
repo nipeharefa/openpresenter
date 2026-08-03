@@ -133,7 +133,7 @@ export default function EditView(props: EditViewProps) {
               <textarea
                 id="item-text"
                 className="min-h-0 flex-1 resize-none px-3 py-3 text-[15px] leading-relaxed"
-                value={current.slides.length ? current.slides.join("\n\n") : current.text}
+                value={current.slides.length ? current.slides.map((s) => s.text).join("\n\n") : current.text}
                 readOnly
               />
               <Hint>
