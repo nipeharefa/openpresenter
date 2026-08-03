@@ -1,5 +1,6 @@
 use serde::Serialize;
 
+use crate::db;
 use crate::slides;
 
 #[derive(Serialize, Clone, Debug)]
@@ -10,7 +11,7 @@ pub struct LiveItem {
     pub text: String,
     pub library_item_id: Option<i64>,
     pub kind: Option<String>,
-    pub slides: Vec<String>,
+    pub slides: Vec<db::Slide>,
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -66,10 +67,16 @@ impl LiveState {
         }
     }
 
-    fn item_slides(&self, index: usize) -> Vec<String> {
+    fn item_slides(&self, index: usize) -> Vec<db::Slide> {
         match self.items.get(index) {
             Some(item) if !item.slides.is_empty() => item.slides.clone(),
-            Some(item) => slides::split_slides(&item.text),
+            Some(item) => slides::split_slides(&item.text)
+                .into_iter()
+                .map(|text| db::Slide {
+                    text,
+                    background: None,
+                })
+                .collect(),
             None => Vec::new(),
         }
     }
@@ -79,7 +86,9 @@ impl LiveState {
     }
 
     pub fn slide_text_at(&self, index: usize) -> Option<String> {
-        self.item_slides(self.item_index).get(index).cloned()
+        self.item_slides(self.item_index)
+            .get(index)
+            .map(|slide| slide.text.clone())
     }
 
     pub fn at_end(&self) -> bool {

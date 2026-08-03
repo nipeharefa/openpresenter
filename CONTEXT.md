@@ -40,6 +40,17 @@ _Avoid_: kategori
 **Perpustakaan Lagu**:
 Kumpulan **Lagu** yang dicari berdasarkan judul atau **Tag**, lalu dimasukkan ke **Urutan Ibadah**.
 
+**Perpustakaan**:
+Kumpulan **Lagu**, **Presentasi**, dan **Media** yang dicari berdasarkan judul, jenis, atau **Tag**.
+
+**Media**:
+File gambar atau video di **Perpustakaan** yang bisa dijadikan **Background** sebuah **Slide** atau ditayangkan penuh layar sebagai **Item**.
+_Avoid_: file
+
+**Background**:
+Gambar atau video latar pada sebuah **Slide** presentasi; diimpor sebagai **Media** dan disalin ke penyimpanan aplikasi.
+_Avoid_: backdrop, wallpaper
+
 **Cue List**:
 Istilah operator untuk **Urutan Ibadah** — susunan item untuk satu penampilan.
 _Avoid_: schedule, playlist
@@ -52,6 +63,8 @@ _Avoid_: schedule, playlist
 - **Layar Hitam** menimpa tampilan **Window Proyeksi** tanpa mengubah posisi slide aktif
 - Sebuah **Item** dapat merujuk satu **Lagu** dari **Perpustakaan Lagu** dan merefleksikan teksnya secara live
 - Sebuah **Lagu** memiliki banyak **Tag**; sebuah **Tag** melekat pada banyak **Lagu**
+- Sebuah **Slide** presentasi dapat memiliki **Background** berupa **Media** dari **Perpustakaan**
+- Sebuah **Media** dapat ditayangkan penuh layar sebagai **Item** di **Urutan Ibadah**
 
 ## Example dialogue
 

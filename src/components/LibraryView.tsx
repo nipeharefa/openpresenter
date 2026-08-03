@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { convertFileSrc } from "@tauri-apps/api/core";
 import { api } from "../lib/api";
+import { kindLabel } from "../lib/slides";
 import type {
   LibraryItem,
   LibraryItemDetail,
   LibraryKind,
   LiveView,
+  MediaInfo,
   PresentationSlide,
   Tag,
 } from "../types";
@@ -88,6 +91,19 @@ export default function LibraryView({ live, focusId, onFocusConsumed }: LibraryV
     refresh("all", "", []);
   }
 
+  async function handleImportMedia() {
+    try {
+      const created = await api.importMedia();
+      setSelected(created);
+      setKindFilter("all");
+      setSearch("");
+      setSelectedTags([]);
+      refresh("all", "", []);
+    } catch {
+      // user canceled the file dialog
+    }
+  }
+
   return (
     <div className="flex min-h-0 flex-1">
       <aside className="w-72 shrink-0 overflow-y-auto border-r border-surface-3 bg-surface-1 p-2.5">
@@ -103,6 +119,7 @@ export default function LibraryView({ live, focusId, onFocusConsumed }: LibraryV
           <button onClick={() => handleCreateItem("presentation")}>
             + Presentasi
           </button>
+          <button onClick={handleImportMedia}>+ Media</button>
         </div>
 
         <div className="flex flex-wrap gap-1 pb-2.5 pt-0.5" aria-label="Filter jenis">
@@ -117,6 +134,9 @@ export default function LibraryView({ live, focusId, onFocusConsumed }: LibraryV
             onClick={() => setKindFilter("presentation")}
           >
             Presentasi
+          </Chip>
+          <Chip active={kindFilter === "media"} onClick={() => setKindFilter("media")}>
+            Media
           </Chip>
         </div>
 
@@ -152,7 +172,7 @@ export default function LibraryView({ live, focusId, onFocusConsumed }: LibraryV
               onClick={() => setSelected(it)}
             >
               <span className="flex-1 truncate">{it.title}</span>
-              <Badge>{it.kind === "presentation" ? "Presentasi" : "Lagu"}</Badge>
+              <Badge>{kindLabel(it.kind)}</Badge>
             </button>
           ))}
           {items.length === 0 && (
@@ -197,10 +217,23 @@ function LibraryDetail(props: {
 }) {
   const { detail, live } = props;
   const [newTag, setNewTag] = useState("");
+  const [mediaOptions, setMediaOptions] = useState<LibraryItem[]>([]);
 
   useEffect(() => {
     setNewTag("");
   }, [detail.id]);
+
+  useEffect(() => {
+    if (detail.kind === "presentation") {
+      api.listLibrary("media", null, []).then(setMediaOptions);
+    }
+  }, [detail.kind, detail.id]);
+
+  async function handleBackground(slideId: number, mediaItemId: number | null) {
+    await api.setSlideBackground(slideId, mediaItemId);
+    const d = await api.getLibraryItem(detail.id);
+    if (d) props.onDetail(d);
+  }
 
   async function handleAddTag() {
     const name = newTag.trim();
@@ -237,7 +270,7 @@ function LibraryDetail(props: {
   return (
     <>
       <div className="flex items-center gap-2">
-        <Badge>{detail.kind === "presentation" ? "Presentasi" : "Lagu"}</Badge>
+        <Badge>{kindLabel(detail.kind)}</Badge>
       </div>
 
       <LibraryTitle id={detail.id} title={detail.title} onChanged={props.onChanged} />
@@ -246,8 +279,12 @@ function LibraryDetail(props: {
         <PresentationSlides
           itemId={detail.id}
           slides={detail.slides}
+          mediaOptions={mediaOptions}
           onSlides={(slides) => props.onDetail({ ...detail, slides })}
+          onBackground={handleBackground}
         />
+      ) : detail.kind === "media" && detail.media ? (
+        <MediaPreview media={detail.media} />
       ) : (
         <LibrarySongText itemId={detail.id} text={detail.text} />
       )}
@@ -352,6 +389,33 @@ function LibraryTitle(props: {
   );
 }
 
+function MediaPreview({ media }: { media: MediaInfo }) {
+  const url = convertFileSrc(media.path);
+  return (
+    <div className="flex flex-col gap-2">
+      {media.mediaType === "video" ? (
+        <video
+          className="max-h-72 w-full rounded-md border border-surface-3 bg-black object-contain"
+          src={url}
+          controls
+          muted
+          loop
+          playsInline
+        />
+      ) : (
+        <img
+          className="max-h-72 w-full rounded-md border border-surface-3 bg-black object-contain"
+          src={url}
+          alt={media.fileName}
+        />
+      )}
+      <p className="m-0 text-xs text-ink-muted">
+        {media.fileName} · {media.mediaType}
+      </p>
+    </div>
+  );
+}
+
 function LibrarySongText(props: { itemId: number; text: string }) {
   const [draft, setDraft] = useState(props.text);
   const savedRef = useRef(props.text);
@@ -400,9 +464,11 @@ function LibrarySongText(props: { itemId: number; text: string }) {
 function PresentationSlides(props: {
   itemId: number;
   slides: PresentationSlide[];
+  mediaOptions: LibraryItem[];
   onSlides: (slides: PresentationSlide[]) => void;
+  onBackground: (slideId: number, mediaItemId: number | null) => void;
 }) {
-  const { slides, onSlides } = props;
+  const { slides, mediaOptions, onSlides } = props;
   const timers = useRef<Map<number, number>>(new Map());
 
   useEffect(() => {
@@ -496,6 +562,27 @@ function PresentationSlides(props: {
             value={s.body}
             onChange={(e) => onChange(s.id, { body: e.target.value })}
           />
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-ink-muted">Background:</span>
+            <select
+              className="max-w-[200px] px-2 py-1 text-xs"
+              value={s.backgroundMediaId ?? ""}
+              onChange={(e) =>
+                props.onBackground(
+                  s.id,
+                  e.target.value ? Number(e.target.value) : null,
+                )
+              }
+              aria-label={`Background slide ${i + 1}`}
+            >
+              <option value="">Tanpa</option>
+              {mediaOptions.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.title}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
       ))}
       {slides.length === 0 && (

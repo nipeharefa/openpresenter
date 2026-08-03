@@ -17,7 +17,34 @@ pub struct Item {
     pub text: String,
     pub library_item_id: Option<i64>,
     pub kind: Option<String>,
-    pub slides: Vec<String>,
+    pub slides: Vec<Slide>,
+}
+
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct SlideBackground {
+    pub media_type: String,
+    pub stored_name: String,
+    pub path: String,
+}
+
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct Slide {
+    pub text: String,
+    pub background: Option<SlideBackground>,
+}
+
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct MediaItem {
+    pub item_id: i64,
+    pub media_type: String,
+    pub file_name: String,
+    pub stored_name: String,
+    pub width: Option<i64>,
+    pub height: Option<i64>,
+    pub path: String,
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -43,6 +70,7 @@ pub struct LibraryItemDetail {
     pub tags: Vec<Tag>,
     pub text: String,
     pub slides: Vec<PresentationSlide>,
+    pub media: Option<MediaItem>,
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -53,6 +81,7 @@ pub struct PresentationSlide {
     pub position: i64,
     pub title: String,
     pub body: String,
+    pub background_media_id: Option<i64>,
 }
 
 pub fn connect(app: &AppHandle) -> rusqlite::Result<Connection> {
@@ -170,6 +199,35 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
         )?;
         conn.pragma_update(None, "foreign_keys", "ON")?;
     }
+    if version < 4 {
+        conn.pragma_update(None, "foreign_keys", "OFF")?;
+        conn.execute_batch(
+            "BEGIN;
+            CREATE TABLE library_item_v4 (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                kind TEXT NOT NULL CHECK (kind IN ('song', 'presentation', 'media')),
+                title TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            INSERT INTO library_item_v4 (id, kind, title, created_at, updated_at)
+                SELECT id, kind, title, created_at, updated_at FROM library_item;
+            DROP TABLE library_item;
+            ALTER TABLE library_item_v4 RENAME TO library_item;
+            CREATE TABLE media_item (
+                item_id INTEGER PRIMARY KEY REFERENCES library_item(id) ON DELETE CASCADE,
+                media_type TEXT NOT NULL CHECK (media_type IN ('image', 'video')),
+                file_name TEXT NOT NULL,
+                stored_name TEXT NOT NULL,
+                width INTEGER,
+                height INTEGER
+            );
+            ALTER TABLE presentation_slide ADD COLUMN background_media_id INTEGER REFERENCES library_item(id) ON DELETE SET NULL;
+            PRAGMA user_version = 4;
+            COMMIT;",
+        )?;
+        conn.pragma_update(None, "foreign_keys", "ON")?;
+    }
     Ok(())
 }
 
@@ -210,13 +268,18 @@ pub fn delete_urutan(conn: &Connection, id: i64) -> rusqlite::Result<()> {
     Ok(())
 }
 
-fn fetch_slides(conn: &Connection, item: &Item) -> rusqlite::Result<Vec<String>> {
-    if item.kind.as_deref() == Some("presentation") {
-        if let Some(library_item_id) = item.library_item_id {
-            return slides_for_item(conn, library_item_id);
-        }
+fn fetch_slides(conn: &Connection, item: &Item) -> rusqlite::Result<Vec<Slide>> {
+    match item.kind.as_deref() {
+        Some("presentation") => match item.library_item_id {
+            Some(id) => slides_for_item(conn, id),
+            None => Ok(Vec::new()),
+        },
+        Some("media") => match item.library_item_id {
+            Some(id) => media_slide_for_item(conn, id),
+            None => Ok(Vec::new()),
+        },
+        _ => Ok(Vec::new()),
     }
-    Ok(Vec::new())
 }
 
 pub fn list_items(conn: &Connection, urutan_id: i64) -> rusqlite::Result<Vec<Item>> {
@@ -480,6 +543,7 @@ pub fn get_library_item_detail(
             } else {
                 Vec::new()
             };
+            let media = if kind == "media" { get_media_item(conn, id)? } else { None };
             Ok(Some(LibraryItemDetail {
                 id,
                 kind,
@@ -487,6 +551,7 @@ pub fn get_library_item_detail(
                 tags,
                 text,
                 slides,
+                media,
             }))
         }
         None => Ok(None),
@@ -515,28 +580,98 @@ pub fn rename_library_item(conn: &Connection, id: i64, title: &str) -> rusqlite:
     Ok(())
 }
 
-pub fn delete_library_item(conn: &Connection, id: i64) -> rusqlite::Result<()> {
+pub fn get_media_item(conn: &Connection, id: i64) -> rusqlite::Result<Option<MediaItem>> {
+    let mut stmt = conn.prepare(
+        "SELECT item_id, media_type, file_name, stored_name, width, height
+         FROM media_item WHERE item_id = ?1",
+    )?;
+    let mut rows = stmt.query_map(params![id], |r| {
+        Ok(MediaItem {
+            item_id: r.get(0)?,
+            media_type: r.get(1)?,
+            file_name: r.get(2)?,
+            stored_name: r.get(3)?,
+            width: r.get(4)?,
+            height: r.get(5)?,
+            path: String::new(),
+        })
+    })?;
+    rows.next().transpose()
+}
+
+pub fn create_media(
+    conn: &Connection,
+    title: &str,
+    media_type: &str,
+    file_name: &str,
+    stored_name: &str,
+) -> rusqlite::Result<LibraryItem> {
+    conn.execute(
+        "INSERT INTO library_item (kind, title) VALUES ('media', ?1)",
+        params![title],
+    )?;
+    let id = conn.last_insert_rowid();
+    conn.execute(
+        "INSERT INTO media_item (item_id, media_type, file_name, stored_name) VALUES (?1, ?2, ?3, ?4)",
+        params![id, media_type, file_name, stored_name],
+    )?;
+    Ok(LibraryItem {
+        id,
+        kind: "media".to_string(),
+        title: title.to_string(),
+        tags: Vec::new(),
+    })
+}
+
+pub fn set_slide_background(conn: &Connection, slide_id: i64, media_item_id: Option<i64>) -> rusqlite::Result<()> {
+    conn.execute(
+        "UPDATE presentation_slide SET background_media_id = ?1 WHERE id = ?2",
+        params![media_item_id, slide_id],
+    )?;
+    Ok(())
+}
+
+pub fn delete_library_item(conn: &Connection, id: i64) -> rusqlite::Result<Option<String>> {
     let kind: Option<String> = conn
         .query_row("SELECT kind FROM library_item WHERE id = ?1", params![id], |r| r.get(0))
         .optional()?;
+    let mut stored_name: Option<String> = None;
     if let Some(kind) = kind {
-        let snapshot: String = if kind == "presentation" {
-            slides_for_item(conn, id)?.join("\n\n")
-        } else {
-            conn.query_row(
-                "SELECT COALESCE(text, '') FROM song_data WHERE item_id = ?1",
+        if kind == "media" {
+            stored_name = conn
+                .query_row(
+                    "SELECT stored_name FROM media_item WHERE item_id = ?1",
+                    params![id],
+                    |r| r.get(0),
+                )
+                .optional()?;
+            conn.execute(
+                "UPDATE item SET library_item_id = NULL WHERE library_item_id = ?1",
                 params![id],
-                |r| r.get(0),
-            )
-            .unwrap_or_default()
-        };
-        conn.execute(
-            "UPDATE item SET text = ?1, library_item_id = NULL WHERE library_item_id = ?2",
-            params![snapshot, id],
-        )?;
+            )?;
+        } else {
+            let snapshot: String = if kind == "presentation" {
+                slides_for_item(conn, id)?
+                    .into_iter()
+                    .map(|s| s.text)
+                    .collect::<Vec<_>>()
+                    .join("\n\n")
+            } else {
+                conn.query_row(
+                    "SELECT COALESCE(text, '') FROM song_data WHERE item_id = ?1",
+                    params![id],
+                    |r| r.get(0),
+                )
+                .unwrap_or_default()
+            };
+            conn.execute(
+                "UPDATE item SET text = ?1, library_item_id = NULL WHERE library_item_id = ?2",
+                params![snapshot, id],
+            )?;
+        }
     }
     conn.execute("DELETE FROM library_item WHERE id = ?1", params![id])?;
-    Ok(())
+    Ok(stored_name)
 }
 
 pub fn save_song_text(conn: &Connection, item_id: i64, text: &str) -> rusqlite::Result<()> {
@@ -553,7 +688,7 @@ pub fn list_presentation_slides(
     item_id: i64,
 ) -> rusqlite::Result<Vec<PresentationSlide>> {
     let mut stmt = conn.prepare(
-        "SELECT id, item_id, position, title, body
+        "SELECT id, item_id, position, title, body, background_media_id
          FROM presentation_slide WHERE item_id = ?1 ORDER BY position",
     )?;
     let rows = stmt.query_map(params![item_id], |r| {
@@ -563,6 +698,7 @@ pub fn list_presentation_slides(
             position: r.get(2)?,
             title: r.get(3)?,
             body: r.get(4)?,
+            background_media_id: r.get(5)?,
         })
     })?;
     rows.collect()
@@ -590,6 +726,7 @@ pub fn add_presentation_slide(
         position,
         title: title.to_string(),
         body: body.to_string(),
+        background_media_id: None,
     })
 }
 
@@ -604,7 +741,7 @@ pub fn save_presentation_slide(
         params![title, body, id],
     )?;
     let mut stmt = conn.prepare(
-        "SELECT id, item_id, position, title, body FROM presentation_slide WHERE id = ?1",
+        "SELECT id, item_id, position, title, body, background_media_id FROM presentation_slide WHERE id = ?1",
     )?;
     stmt.query_row(params![id], |r| {
         Ok(PresentationSlide {
@@ -613,6 +750,7 @@ pub fn save_presentation_slide(
             position: r.get(2)?,
             title: r.get(3)?,
             body: r.get(4)?,
+            background_media_id: r.get(5)?,
         })
     })
 }
@@ -644,13 +782,50 @@ pub fn move_presentation_slide(
     Ok(())
 }
 
-pub fn slides_for_item(conn: &Connection, item_id: i64) -> rusqlite::Result<Vec<String>> {
+pub fn slides_for_item(conn: &Connection, item_id: i64) -> rusqlite::Result<Vec<Slide>> {
     let mut stmt = conn.prepare(
-        "SELECT CASE WHEN body != '' THEN body ELSE title END AS s
-         FROM presentation_slide WHERE item_id = ?1 ORDER BY position",
+        "SELECT CASE WHEN ps.body != '' THEN ps.body ELSE ps.title END AS s,
+                mi.media_type, mi.stored_name
+         FROM presentation_slide ps
+         LEFT JOIN library_item li ON li.id = ps.background_media_id
+         LEFT JOIN media_item mi ON mi.item_id = li.id
+         WHERE ps.item_id = ?1 ORDER BY ps.position",
     )?;
-    let rows = stmt.query_map(params![item_id], |r| r.get::<_, String>(0))?;
+    let rows = stmt.query_map(params![item_id], |r| {
+        Ok(Slide {
+            text: r.get::<_, String>(0)?,
+            background: match r.get::<_, Option<String>>(1)? {
+                Some(media_type) => Some(SlideBackground {
+                    media_type,
+                    stored_name: r.get::<_, String>(2)?,
+                    path: String::new(),
+                }),
+                None => None,
+            },
+        })
+    })?;
     rows.collect()
+}
+
+fn media_slide_for_item(conn: &Connection, item_id: i64) -> rusqlite::Result<Vec<Slide>> {
+    let mut stmt = conn.prepare(
+        "SELECT media_type, stored_name FROM media_item WHERE item_id = ?1",
+    )?;
+    let mut rows = stmt.query_map(params![item_id], |r| {
+        Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+    })?;
+    let row = rows.next().transpose()?;
+    match row {
+        Some((media_type, stored_name)) => Ok(vec![Slide {
+            text: String::new(),
+            background: Some(SlideBackground {
+                media_type,
+                stored_name,
+                path: String::new(),
+            }),
+        }]),
+        None => Ok(Vec::new()),
+    }
 }
 
 pub fn list_tags(conn: &Connection) -> rusqlite::Result<Vec<Tag>> {
@@ -836,5 +1011,36 @@ mod tests {
         let item = get_item(&conn, item.id).unwrap().unwrap();
         assert_eq!(item.library_item_id, None);
         assert_eq!(item.text, "Lyric A\n\nLyric B");
+    }
+
+    #[test]
+    fn media_library_and_slide_background() {
+        let conn = test_conn();
+        let m = create_media(&conn, "Gambar", "image", "gambar.png", "abc123.png").unwrap();
+        assert_eq!(m.kind, "media");
+        let media = get_media_item(&conn, m.id).unwrap().unwrap();
+        assert_eq!(media.stored_name, "abc123.png");
+
+        let u = create_urutan(&conn, "U").unwrap();
+        let item = add_library_item_to_urutan(&conn, u.id, m.id).unwrap();
+        assert_eq!(item.kind.as_deref(), Some("media"));
+        assert_eq!(item.slides.len(), 1);
+        assert_eq!(item.slides[0].text, "");
+        let bg = item.slides[0].background.as_ref().unwrap();
+        assert_eq!(bg.media_type, "image");
+        assert_eq!(bg.stored_name, "abc123.png");
+
+        let p = create_library_item(&conn, "presentation", "Outline").unwrap();
+        let s = add_presentation_slide(&conn, p.id, "Intro", "Selamat pagi").unwrap();
+        set_slide_background(&conn, s.id, Some(m.id)).unwrap();
+        let slides = slides_for_item(&conn, p.id).unwrap();
+        assert_eq!(slides[0].background.as_ref().unwrap().media_type, "image");
+
+        set_slide_background(&conn, s.id, None).unwrap();
+        let slides = slides_for_item(&conn, p.id).unwrap();
+        assert!(slides[0].background.is_none());
+
+        let stored = delete_library_item(&conn, m.id).unwrap();
+        assert_eq!(stored.as_deref(), Some("abc123.png"));
     }
 }

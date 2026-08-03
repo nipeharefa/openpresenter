@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { convertFileSrc } from "@tauri-apps/api/core";
 import { api } from "../lib/api";
 import { itemSlideCount } from "../lib/slides";
 import type { LiveView } from "../types";
@@ -46,6 +47,8 @@ export default function LiveView({ live, projectionOpen, onStop }: LiveViewProps
   }
 
   const item = live.items[live.itemIndex];
+  const curSlide = item.slides[live.slideIndex];
+  const bg = curSlide?.background ?? null;
 
   return (
     <div className="flex min-h-0 flex-1">
@@ -91,15 +94,33 @@ export default function LiveView({ live, projectionOpen, onStop }: LiveViewProps
           </span>
         </div>
 
-        <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-2xl border border-surface-3 bg-black">
+        <div className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-2xl border border-surface-3 bg-black">
+          {!live.black && bg && (
+            bg.mediaType === "video" ? (
+              <video
+                className="absolute inset-0 h-full w-full object-cover"
+                src={convertFileSrc(bg.path)}
+                autoPlay
+                muted
+                loop
+                playsInline
+              />
+            ) : (
+              <img
+                className="absolute inset-0 h-full w-full object-cover"
+                src={convertFileSrc(bg.path)}
+                alt=""
+              />
+            )
+          )}
           {live.black ? (
-            <span className="text-xs uppercase tracking-[0.2em] text-ink-muted">
+            <span className="absolute inset-0 flex items-center justify-center bg-black text-xs uppercase tracking-[0.2em] text-ink-muted">
               Layar Hitam
             </span>
           ) : (
             <div
               key={`${live.itemIndex}:${live.slideIndex}`}
-              className="max-w-full animate-[proj-in_200ms_ease] whitespace-pre-line px-6 py-6 text-center text-[clamp(1rem,3vw,2rem)] leading-relaxed text-[#f2f1ec]"
+              className="relative max-w-full animate-[proj-in_200ms_ease] whitespace-pre-line px-6 py-6 text-center text-[clamp(1rem,3vw,2rem)] leading-relaxed text-[#f2f1ec]"
             >
               {live.slideText}
             </div>

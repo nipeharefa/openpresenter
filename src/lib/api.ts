@@ -61,6 +61,10 @@ export const api = {
   addLibraryItemToUrutan: (urutanId: number, libraryItemId: number) =>
     invoke<void>("add_library_item_to_urutan", { urutanId, libraryItemId }),
 
+  importMedia: () => invoke<LibraryItem>("import_media"),
+  setSlideBackground: (slideId: number, mediaItemId: number | null) =>
+    invoke<void>("set_slide_background", { slideId, mediaItemId }),
+
   getLive: () => invoke<LiveView>("get_live"),
 };
 
