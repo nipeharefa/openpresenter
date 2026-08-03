@@ -37,7 +37,9 @@ pub fn run() {
                                 id: item.id,
                                 title: item.title,
                                 text: item.text,
-                                song_id: item.song_id,
+                                library_item_id: item.library_item_id,
+                                kind: item.kind,
+                                slides: item.slides,
                             })
                             .collect();
                     }
@@ -65,14 +67,20 @@ pub fn run() {
             commands::list_monitors,
             commands::set_projection_monitor,
             commands::get_projection_monitor,
-            commands::list_songs,
-            commands::create_song,
-            commands::save_song,
-            commands::delete_song,
+            commands::list_library,
+            commands::get_library_item,
+            commands::create_library_item,
+            commands::rename_library_item,
+            commands::delete_library_item,
+            commands::save_song_text,
+            commands::add_slide,
+            commands::save_slide,
+            commands::delete_slide,
+            commands::move_slide,
             commands::list_tags,
-            commands::add_song_tag,
-            commands::remove_song_tag,
-            commands::add_song_to_urutan,
+            commands::add_item_tag,
+            commands::remove_item_tag,
+            commands::add_library_item_to_urutan,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
