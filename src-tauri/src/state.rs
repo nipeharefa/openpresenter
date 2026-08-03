@@ -31,6 +31,7 @@ pub struct LiveState {
     pub item_index: usize,
     pub slide_index: usize,
     pub black: bool,
+    pub projection_open: bool,
 }
 
 impl LiveState {
@@ -42,6 +43,7 @@ impl LiveState {
             item_index: 0,
             slide_index: 0,
             black: false,
+            projection_open: false,
         }
     }
 

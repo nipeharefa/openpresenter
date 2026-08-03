@@ -219,12 +219,17 @@ pub fn list_monitors(app: AppHandle) -> Result<Vec<MonitorInfo>, String> {
 }
 
 #[tauri::command]
-pub fn open_projection(app: AppHandle, monitor: Option<String>) -> Result<(), String> {
+pub fn open_projection(
+    app: AppHandle,
+    state: State<'_, Mutex<LiveState>>,
+    monitor: Option<String>,
+) -> Result<(), String> {
     let target = resolve_monitor_target(&app, monitor.as_deref())?;
     if let Some(window) = app.get_webview_window("projection") {
         place_projection(&window, target.as_ref())?;
         window.show().map_err(|e| e.to_string())?;
         window.set_focus().map_err(|e| e.to_string())?;
+        set_projection_open(&app, &state, true)?;
         return Ok(());
     }
     let (x, y, width, height) = match &target {
@@ -244,7 +249,46 @@ pub fn open_projection(app: AppHandle, monitor: Option<String>) -> Result<(), St
         .build()
         .map_err(|e| e.to_string())?;
     window.set_fullscreen(true).map_err(|e| e.to_string())?;
+    set_projection_open(&app, &state, true)
+}
+
+#[tauri::command]
+pub fn close_projection(
+    app: AppHandle,
+    state: State<'_, Mutex<LiveState>>,
+) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window("projection") {
+        window.close().map_err(|e| e.to_string())?;
+    }
+    set_projection_open(&app, &state, false)
+}
+
+#[tauri::command]
+pub fn get_projection_open(state: State<'_, Mutex<LiveState>>) -> bool {
+    state.lock().unwrap().projection_open
+}
+
+pub fn set_projection_open(
+    app: &AppHandle,
+    state: &State<'_, Mutex<LiveState>>,
+    open: bool,
+) -> Result<(), String> {
+    let mut live = state.lock().unwrap();
+    if live.projection_open != open {
+        live.projection_open = open;
+        app.emit("projection:changed", open).map_err(|e| e.to_string())?;
+    }
     Ok(())
+}
+
+pub fn on_projection_close(window: &tauri::Window) {
+    let handle = window.app_handle().clone();
+    let state = handle.state::<Mutex<LiveState>>();
+    let mut live = state.lock().unwrap();
+    if live.projection_open {
+        live.projection_open = false;
+        let _ = handle.emit("projection:changed", false);
+    }
 }
 
 #[tauri::command]
