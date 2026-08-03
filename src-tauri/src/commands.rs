@@ -22,7 +22,9 @@ fn to_live_item(item: db::Item) -> LiveItem {
         id: item.id,
         title: item.title,
         text: item.text,
-        song_id: item.song_id,
+        library_item_id: item.library_item_id,
+        kind: item.kind,
+        slides: item.slides,
     }
 }
 
@@ -108,7 +110,7 @@ pub fn save_item(
     let conn = db::connect(&app).map_err(db_error)?;
     let existing = db::get_item(&conn, id).map_err(db_error)?;
     let item = match existing {
-        Some(item) if item.song_id.is_some() => item,
+        Some(item) if item.library_item_id.is_some() => item,
         _ => db::save_item(&conn, id, &title, &text).map_err(db_error)?,
     };
     let mut live = state.lock().unwrap();
@@ -116,7 +118,9 @@ pub fn save_item(
         if let Some(current) = live.items.iter_mut().find(|i| i.id == id) {
             current.title = item.title.clone();
             current.text = item.text.clone();
-            current.song_id = item.song_id;
+            current.library_item_id = item.library_item_id;
+            current.kind = item.kind.clone();
+            current.slides = item.slides.clone();
         }
         if live.item_index >= live.items.len() {
             live.item_index = live.items.len().saturating_sub(1);
@@ -367,57 +371,159 @@ fn reload_if_current(
     emit_view(app, &live)
 }
 
-fn current_urutan_if_refs_song(app: &AppHandle, song_id: i64) -> Option<i64> {
+fn current_urutan_if_refs_item(app: &AppHandle, library_item_id: i64) -> Option<i64> {
     let state = app.state::<Mutex<LiveState>>();
     let live = state.lock().unwrap();
-    if live.items.iter().any(|i| i.song_id == Some(song_id)) {
+    if live
+        .items
+        .iter()
+        .any(|i| i.library_item_id == Some(library_item_id))
+    {
         live.urutan_id
     } else {
         None
     }
 }
 
+/* ---------- Unified library commands ---------- */
+
 #[tauri::command]
-pub fn list_songs(
+pub fn list_library(
     app: AppHandle,
+    kind: Option<String>,
     title: Option<String>,
     tags: Vec<String>,
-) -> Result<Vec<db::Song>, String> {
+) -> Result<Vec<db::LibraryItem>, String> {
     let conn = db::connect(&app).map_err(db_error)?;
-    db::list_songs(&conn, title.as_deref(), &tags).map_err(db_error)
+    db::list_library(&conn, kind.as_deref(), title.as_deref(), &tags).map_err(db_error)
 }
 
 #[tauri::command]
-pub fn create_song(app: AppHandle, title: String, text: String) -> Result<db::Song, String> {
+pub fn get_library_item(app: AppHandle, id: i64) -> Result<Option<db::LibraryItemDetail>, String> {
     let conn = db::connect(&app).map_err(db_error)?;
-    db::create_song(&conn, &title, &text).map_err(db_error)
+    db::get_library_item_detail(&conn, id).map_err(db_error)
 }
 
 #[tauri::command]
-pub fn save_song(
+pub fn create_library_item(
+    app: AppHandle,
+    kind: String,
+    title: String,
+) -> Result<db::LibraryItem, String> {
+    let conn = db::connect(&app).map_err(db_error)?;
+    db::create_library_item(&conn, &kind, &title).map_err(db_error)
+}
+
+#[tauri::command]
+pub fn rename_library_item(
     app: AppHandle,
     state: State<'_, Mutex<LiveState>>,
     id: i64,
     title: String,
-    text: String,
-) -> Result<db::Song, String> {
+) -> Result<(), String> {
     let conn = db::connect(&app).map_err(db_error)?;
-    let song = db::save_song(&conn, id, &title, &text).map_err(db_error)?;
-    if let Some(urutan_id) = current_urutan_if_refs_song(&app, id) {
+    db::rename_library_item(&conn, id, &title).map_err(db_error)?;
+    if let Some(urutan_id) = current_urutan_if_refs_item(&app, id) {
         reload_if_current(&app, &state, urutan_id)?;
     }
-    Ok(song)
+    Ok(())
 }
 
 #[tauri::command]
-pub fn delete_song(
+pub fn delete_library_item(
     app: AppHandle,
     state: State<'_, Mutex<LiveState>>,
     id: i64,
 ) -> Result<(), String> {
     let conn = db::connect(&app).map_err(db_error)?;
-    db::delete_song(&conn, id).map_err(db_error)?;
-    if let Some(urutan_id) = current_urutan_if_refs_song(&app, id) {
+    db::delete_library_item(&conn, id).map_err(db_error)?;
+    if let Some(urutan_id) = current_urutan_if_refs_item(&app, id) {
+        reload_if_current(&app, &state, urutan_id)?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn save_song_text(
+    app: AppHandle,
+    state: State<'_, Mutex<LiveState>>,
+    item_id: i64,
+    text: String,
+) -> Result<(), String> {
+    let conn = db::connect(&app).map_err(db_error)?;
+    db::save_song_text(&conn, item_id, &text).map_err(db_error)?;
+    if let Some(urutan_id) = current_urutan_if_refs_item(&app, item_id) {
+        reload_if_current(&app, &state, urutan_id)?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn add_slide(
+    app: AppHandle,
+    state: State<'_, Mutex<LiveState>>,
+    item_id: i64,
+    title: String,
+    body: String,
+) -> Result<db::PresentationSlide, String> {
+    let conn = db::connect(&app).map_err(db_error)?;
+    let slide = db::add_presentation_slide(&conn, item_id, &title, &body).map_err(db_error)?;
+    if let Some(urutan_id) = current_urutan_if_refs_item(&app, item_id) {
+        reload_if_current(&app, &state, urutan_id)?;
+    }
+    Ok(slide)
+}
+
+#[tauri::command]
+pub fn save_slide(
+    app: AppHandle,
+    state: State<'_, Mutex<LiveState>>,
+    id: i64,
+    title: String,
+    body: String,
+) -> Result<db::PresentationSlide, String> {
+    let conn = db::connect(&app).map_err(db_error)?;
+    let slide = db::save_presentation_slide(&conn, id, &title, &body).map_err(db_error)?;
+    if let Some(urutan_id) = current_urutan_if_refs_item(&app, slide.item_id) {
+        reload_if_current(&app, &state, urutan_id)?;
+    }
+    Ok(slide)
+}
+
+#[tauri::command]
+pub fn delete_slide(
+    app: AppHandle,
+    state: State<'_, Mutex<LiveState>>,
+    id: i64,
+) -> Result<(), String> {
+    let conn = db::connect(&app).map_err(db_error)?;
+    let item_id = conn
+        .query_row(
+            "SELECT item_id FROM presentation_slide WHERE id = ?1",
+            rusqlite::params![id],
+            |r| r.get::<_, i64>(0),
+        )
+        .ok();
+    db::delete_presentation_slide(&conn, id).map_err(db_error)?;
+    if let Some(item_id) = item_id {
+        if let Some(urutan_id) = current_urutan_if_refs_item(&app, item_id) {
+            reload_if_current(&app, &state, urutan_id)?;
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn move_slide(
+    app: AppHandle,
+    state: State<'_, Mutex<LiveState>>,
+    item_id: i64,
+    slide_id: i64,
+    new_position: i64,
+) -> Result<(), String> {
+    let mut conn = db::connect(&app).map_err(db_error)?;
+    db::move_presentation_slide(&mut conn, item_id, slide_id, new_position).map_err(db_error)?;
+    if let Some(urutan_id) = current_urutan_if_refs_item(&app, item_id) {
         reload_if_current(&app, &state, urutan_id)?;
     }
     Ok(())
@@ -430,26 +536,26 @@ pub fn list_tags(app: AppHandle) -> Result<Vec<db::Tag>, String> {
 }
 
 #[tauri::command]
-pub fn add_song_tag(app: AppHandle, song_id: i64, name: String) -> Result<db::Tag, String> {
+pub fn add_item_tag(app: AppHandle, item_id: i64, name: String) -> Result<db::Tag, String> {
     let conn = db::connect(&app).map_err(db_error)?;
-    db::add_song_tag(&conn, song_id, &name).map_err(db_error)
+    db::add_item_tag(&conn, item_id, &name).map_err(db_error)
 }
 
 #[tauri::command]
-pub fn remove_song_tag(app: AppHandle, song_id: i64, tag_id: i64) -> Result<(), String> {
+pub fn remove_item_tag(app: AppHandle, item_id: i64, tag_id: i64) -> Result<(), String> {
     let conn = db::connect(&app).map_err(db_error)?;
-    db::remove_song_tag(&conn, song_id, tag_id).map_err(db_error)
+    db::remove_item_tag(&conn, item_id, tag_id).map_err(db_error)
 }
 
 #[tauri::command]
-pub fn add_song_to_urutan(
+pub fn add_library_item_to_urutan(
     app: AppHandle,
     state: State<'_, Mutex<LiveState>>,
     urutan_id: i64,
-    song_id: i64,
+    library_item_id: i64,
 ) -> Result<db::Item, String> {
     let conn = db::connect(&app).map_err(db_error)?;
-    let item = db::add_song_to_urutan(&conn, urutan_id, song_id).map_err(db_error)?;
+    let item = db::add_library_item_to_urutan(&conn, urutan_id, library_item_id).map_err(db_error)?;
     reload_if_current(&app, &state, urutan_id)?;
     Ok(item)
 }

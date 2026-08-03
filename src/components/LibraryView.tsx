@@ -1,0 +1,476 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+import { api } from "../lib/api";
+import type {
+  LibraryItem,
+  LibraryItemDetail,
+  LibraryKind,
+  LiveView,
+  PresentationSlide,
+  Tag,
+} from "../types";
+import { Badge, Chip, Hint } from "./common";
+
+const HINT =
+  "Pisahkan slide dengan satu baris kosong.\n\nContoh: bait pertama slide 1.\n\nBait kedua jadi slide 2.";
+
+interface LibraryViewProps {
+  live: LiveView | null;
+  focusId: number | null;
+  onFocusConsumed: () => void;
+}
+
+type KindFilter = LibraryKind | "all";
+
+export default function LibraryView({ live, focusId, onFocusConsumed }: LibraryViewProps) {
+  const [kindFilter, setKindFilter] = useState<KindFilter>("all");
+  const [search, setSearch] = useState("");
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [allTags, setAllTags] = useState<Tag[]>([]);
+  const [items, setItems] = useState<LibraryItem[]>([]);
+  const [selected, setSelected] = useState<LibraryItem | null>(null);
+  const [detail, setDetail] = useState<LibraryItemDetail | null>(null);
+
+  const refresh = useCallback((kind: KindFilter, q: string, tags: string[]) => {
+    api
+      .listLibrary(kind === "all" ? null : kind, q.trim() || null, tags)
+      .then(setItems);
+  }, []);
+
+  useEffect(() => {
+    api.listTags().then(setAllTags);
+    refresh("all", "", []);
+  }, [refresh]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(
+      () => refresh(kindFilter, search, selectedTags),
+      250,
+    );
+    return () => window.clearTimeout(timer);
+  }, [kindFilter, search, selectedTags, refresh]);
+
+  useEffect(() => {
+    if (focusId == null) return;
+    api.listLibrary(null, null, []).then((list) => {
+      const found = list.find((it) => it.id === focusId) ?? null;
+      setSelected(found);
+      setItems(list);
+    });
+    setKindFilter("all");
+    setSearch("");
+    setSelectedTags([]);
+    onFocusConsumed();
+  }, [focusId, onFocusConsumed]);
+
+  useEffect(() => {
+    if (!selected) {
+      setDetail(null);
+      return;
+    }
+    api.getLibraryItem(selected.id).then(setDetail);
+  }, [selected]);
+
+  function toggleTag(name: string) {
+    setSelectedTags((tags) =>
+      tags.includes(name) ? tags.filter((t) => t !== name) : [...tags, name],
+    );
+  }
+
+  async function handleCreateItem(kind: LibraryKind) {
+    const created = await api.createLibraryItem(
+      kind,
+      kind === "presentation" ? "Presentasi baru" : "Lagu baru",
+    );
+    setSelected(created);
+    setKindFilter("all");
+    setSearch("");
+    setSelectedTags([]);
+    refresh("all", "", []);
+  }
+
+  return (
+    <div className="lib">
+      <aside className="lib__list layer-surface-1">
+        <div className="lib__toolbar">
+          <input
+            placeholder="Cari judul…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            aria-label="Cari judul"
+          />
+          <button onClick={() => handleCreateItem("song")}>+ Lagu</button>
+          <button onClick={() => handleCreateItem("presentation")}>
+            + Presentasi
+          </button>
+        </div>
+
+        <div className="lib__tags" aria-label="Filter jenis">
+          <Chip active={kindFilter === "all"} onClick={() => setKindFilter("all")}>
+            Semua
+          </Chip>
+          <Chip active={kindFilter === "song"} onClick={() => setKindFilter("song")}>
+            Lagu
+          </Chip>
+          <Chip
+            active={kindFilter === "presentation"}
+            onClick={() => setKindFilter("presentation")}
+          >
+            Presentasi
+          </Chip>
+        </div>
+
+        <div className="lib__tags" aria-label="Filter tag">
+          <Chip
+            active={selectedTags.length === 0}
+            onClick={() => setSelectedTags([])}
+          >
+            Semua tag
+          </Chip>
+          {allTags.map((t) => (
+            <Chip
+              key={t.id}
+              active={selectedTags.includes(t.name)}
+              onClick={() => toggleTag(t.name)}
+            >
+              {t.name}
+            </Chip>
+          ))}
+        </div>
+
+        <div className="lib__songs">
+          {items.map((it) => (
+            <button
+              key={it.id}
+              type="button"
+              className={
+                "lib__song" + (selected?.id === it.id ? " lib__song--active" : "")
+              }
+              onClick={() => setSelected(it)}
+            >
+              <span className="lib__song-title">{it.title}</span>
+              <Badge>{it.kind === "presentation" ? "Presentasi" : "Lagu"}</Badge>
+            </button>
+          ))}
+          {items.length === 0 && (
+            <p className="muted">
+              Tidak ada konten yang cocok. Ubah filter atau buat baru.
+            </p>
+          )}
+        </div>
+      </aside>
+
+      <main className="lib__detail">
+        {selected && detail ? (
+          <LibraryDetail
+            detail={detail}
+            live={live}
+            onChanged={() => refresh(kindFilter, search, selectedTags)}
+            onDetail={(d) => setDetail(d)}
+            onDeleted={() => {
+              setSelected(null);
+              setDetail(null);
+              refresh(kindFilter, search, selectedTags);
+            }}
+          />
+        ) : (
+          <p className="muted">
+            Pilih konten dari daftar, atau buat lagu / presentasi baru.
+          </p>
+        )}
+      </main>
+    </div>
+  );
+}
+
+/* ---------- Detail panel (atomic) ---------- */
+
+function LibraryDetail(props: {
+  detail: LibraryItemDetail;
+  live: LiveView | null;
+  onChanged: () => void;
+  onDetail: (d: LibraryItemDetail) => void;
+  onDeleted: () => void;
+}) {
+  const { detail, live } = props;
+  const [newTag, setNewTag] = useState("");
+
+  useEffect(() => {
+    setNewTag("");
+  }, [detail.id]);
+
+  async function handleAddTag() {
+    const name = newTag.trim();
+    if (!name) return;
+    const tag = await api.addItemTag(detail.id, name);
+    setNewTag("");
+    props.onDetail({
+      ...detail,
+      tags: [...detail.tags.filter((t) => t.id !== tag.id), tag],
+    });
+    props.onChanged();
+  }
+
+  async function handleRemoveTag(tagId: number) {
+    await api.removeItemTag(detail.id, tagId);
+    props.onDetail({
+      ...detail,
+      tags: detail.tags.filter((t) => t.id !== tagId),
+    });
+    props.onChanged();
+  }
+
+  async function handleAddToUrutan() {
+    if (!live?.urutanId) return;
+    await api.addLibraryItemToUrutan(live.urutanId, detail.id);
+  }
+
+  async function handleDelete() {
+    if (!window.confirm(`Hapus "${detail.title}"?`)) return;
+    await api.deleteLibraryItem(detail.id);
+    props.onDeleted();
+  }
+
+  return (
+    <>
+      <div className="edit__readonly-head">
+        <Badge>{detail.kind === "presentation" ? "Presentasi" : "Lagu"}</Badge>
+      </div>
+
+      <LibraryTitle id={detail.id} title={detail.title} onChanged={props.onChanged} />
+
+      {detail.kind === "presentation" ? (
+        <PresentationSlides
+          itemId={detail.id}
+          slides={detail.slides}
+          onSlides={(slides) => props.onDetail({ ...detail, slides })}
+        />
+      ) : (
+        <LibrarySongText itemId={detail.id} text={detail.text} />
+      )}
+
+      <div className="lib__tags-editor">
+        <span className="lib__tags-label">Tag</span>
+        {detail.tags.map((t) => (
+          <span key={t.id} className="tag-chip">
+            {t.name}
+            <button
+              onClick={() => handleRemoveTag(t.id)}
+              aria-label={`Hapus tag ${t.name}`}
+              title={`Hapus tag ${t.name}`}
+            >
+              ×
+            </button>
+          </span>
+        ))}
+        <input
+          placeholder="+ tag"
+          value={newTag}
+          onChange={(e) => setNewTag(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") handleAddTag();
+            if (e.key === "Escape") setNewTag("");
+          }}
+          aria-label="Tambah tag"
+        />
+      </div>
+
+      <Hint>Tersimpan otomatis.</Hint>
+
+      <div className="lib__actions">
+        <button
+          className="btn--primary"
+          onClick={handleAddToUrutan}
+          disabled={!live?.loaded}
+          title={live?.loaded ? "" : "Pilih Urutan dulu"}
+        >
+          Tambah ke Urutan
+          {live?.loaded ? ` “${live.urutanName}”` : ""}
+        </button>
+        <button onClick={handleDelete}>Hapus</button>
+      </div>
+    </>
+  );
+}
+
+function LibraryTitle(props: {
+  id: number;
+  title: string;
+  onChanged: () => void;
+}) {
+  const [draft, setDraft] = useState(props.title);
+  const savedRef = useRef(props.title);
+  const timer = useRef<number | null>(null);
+
+  useEffect(() => {
+    setDraft(props.title);
+    savedRef.current = props.title;
+  }, [props.id, props.title]);
+
+  useEffect(() => {
+    return () => {
+      if (timer.current) window.clearTimeout(timer.current);
+    };
+  }, []);
+
+  function onChange(value: string) {
+    setDraft(value);
+    if (timer.current) window.clearTimeout(timer.current);
+    timer.current = window.setTimeout(() => {
+      if (value === savedRef.current) return;
+      savedRef.current = value;
+      api.renameLibraryItem(props.id, value);
+      props.onChanged();
+    }, 500);
+  }
+
+  return (
+    <>
+      <label htmlFor="lib-title">Judul</label>
+      <input
+        id="lib-title"
+        className="edit__title"
+        value={draft}
+        onChange={(e) => onChange(e.target.value)}
+      />
+    </>
+  );
+}
+
+function LibrarySongText(props: { itemId: number; text: string }) {
+  const [draft, setDraft] = useState(props.text);
+  const savedRef = useRef(props.text);
+  const timer = useRef<number | null>(null);
+
+  useEffect(() => {
+    setDraft(props.text);
+    savedRef.current = props.text;
+  }, [props.itemId, props.text]);
+
+  useEffect(() => {
+    return () => {
+      if (timer.current) window.clearTimeout(timer.current);
+    };
+  }, []);
+
+  function onChange(value: string) {
+    setDraft(value);
+    if (timer.current) window.clearTimeout(timer.current);
+    timer.current = window.setTimeout(() => {
+      if (value === savedRef.current) return;
+      savedRef.current = value;
+      api.saveSongText(props.itemId, value);
+    }, 500);
+  }
+
+  return (
+    <>
+      <label htmlFor="lib-text">Lirik</label>
+      <textarea
+        id="lib-text"
+        className="edit__text"
+        placeholder={HINT}
+        value={draft}
+        onChange={(e) => onChange(e.target.value)}
+      />
+    </>
+  );
+}
+
+function PresentationSlides(props: {
+  itemId: number;
+  slides: PresentationSlide[];
+  onSlides: (slides: PresentationSlide[]) => void;
+}) {
+  const { slides, onSlides } = props;
+  const timers = useRef<Map<number, number>>(new Map());
+
+  useEffect(() => {
+    return () => {
+      timers.current.forEach((t) => window.clearTimeout(t));
+      timers.current.clear();
+    };
+  }, []);
+
+  function onChange(slideId: number, patch: { title?: string; body?: string }) {
+    onSlides(slides.map((s) => (s.id === slideId ? { ...s, ...patch } : s)));
+    const existing = timers.current.get(slideId);
+    if (existing) window.clearTimeout(existing);
+    timers.current.set(
+      slideId,
+      window.setTimeout(() => {
+        const slide = slides.find((s) => s.id === slideId);
+        if (slide) api.saveSlide(slideId, slide.title, slide.body);
+      }, 500),
+    );
+  }
+
+  async function reload() {
+    const d = await api.getLibraryItem(props.itemId);
+    if (d) onSlides(d.slides);
+  }
+
+  async function add() {
+    await api.addSlide(props.itemId, "Slide baru", "");
+    await reload();
+  }
+
+  async function move(index: number, delta: number) {
+    const slide = slides[index];
+    await api.moveSlide(props.itemId, slide.id, index + delta);
+    await reload();
+  }
+
+  async function remove(slideId: number) {
+    await api.deleteSlide(slideId);
+    await reload();
+  }
+
+  return (
+    <div className="pres">
+      <div className="pres__head">
+        <span className="pres__count">{slides.length} slide</span>
+        <button onClick={add}>+ Slide</button>
+      </div>
+      {slides.map((s, i) => (
+        <div key={s.id} className="pres__slide layer-surface-1">
+          <div className="pres__slide-head">
+            <span className="pres__slide-index">{i + 1}</span>
+            <button
+              disabled={i === 0}
+              onClick={() => move(i, -1)}
+              aria-label="Pindah slide ke atas"
+            >
+              ↑
+            </button>
+            <button
+              disabled={i >= slides.length - 1}
+              onClick={() => move(i, 1)}
+              aria-label="Pindah slide ke bawah"
+            >
+              ↓
+            </button>
+            <button onClick={() => remove(s.id)} aria-label="Hapus slide">
+              ×
+            </button>
+          </div>
+          <input
+            placeholder="Judul slide (label operator)"
+            value={s.title}
+            onChange={(e) => onChange(s.id, { title: e.target.value })}
+          />
+          <textarea
+            className="pres__body"
+            placeholder="Isi slide (yang ditayangkan)"
+            value={s.body}
+            onChange={(e) => onChange(s.id, { body: e.target.value })}
+          />
+        </div>
+      ))}
+      {slides.length === 0 && (
+        <p className="muted">
+          Belum ada slide. Tambahkan slide pertama dengan tombol + Slide.
+        </p>
+      )}
+    </div>
+  );
+}

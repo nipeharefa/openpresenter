@@ -8,7 +8,9 @@ pub struct LiveItem {
     pub id: i64,
     pub title: String,
     pub text: String,
-    pub song_id: Option<i64>,
+    pub library_item_id: Option<i64>,
+    pub kind: Option<String>,
+    pub slides: Vec<String>,
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -50,14 +52,7 @@ impl LiveState {
 
     pub fn view(&self) -> LiveView {
         let slide_count = self.slide_count();
-        let slide_text = self
-            .items
-            .get(self.item_index)
-            .and_then(|item| {
-                let slides = slides::split_slides(&item.text);
-                slides.get(self.slide_index).cloned()
-            })
-            .unwrap_or_default();
+        let slide_text = self.slide_text_at(self.slide_index).unwrap_or_default();
         LiveView {
             loaded: self.urutan_id.is_some(),
             urutan_id: self.urutan_id,
@@ -71,11 +66,20 @@ impl LiveState {
         }
     }
 
+    fn item_slides(&self, index: usize) -> Vec<String> {
+        match self.items.get(index) {
+            Some(item) if !item.slides.is_empty() => item.slides.clone(),
+            Some(item) => slides::split_slides(&item.text),
+            None => Vec::new(),
+        }
+    }
+
     pub fn slide_count(&self) -> usize {
-        self.items
-            .get(self.item_index)
-            .map(|item| slides::split_slides(&item.text).len())
-            .unwrap_or(0)
+        self.item_slides(self.item_index).len()
+    }
+
+    pub fn slide_text_at(&self, index: usize) -> Option<String> {
+        self.item_slides(self.item_index).get(index).cloned()
     }
 
     pub fn at_end(&self) -> bool {

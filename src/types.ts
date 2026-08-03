@@ -3,11 +3,15 @@ export interface Urutan {
   name: string;
 }
 
+export type Mode = "edit" | "library" | "live";
+
 export interface LiveItem {
   id: number;
   title: string;
   text: string;
-  songId: number | null;
+  libraryItemId: number | null;
+  kind: string | null;
+  slides: string[];
 }
 
 export interface LiveView {
@@ -37,9 +41,28 @@ export interface Tag {
   name: string;
 }
 
-export interface Song {
+export type LibraryKind = "song" | "presentation";
+
+export interface LibraryItem {
   id: number;
+  kind: LibraryKind;
   title: string;
-  text: string;
   tags: Tag[];
+}
+
+export interface PresentationSlide {
+  id: number;
+  itemId: number;
+  position: number;
+  title: string;
+  body: string;
+}
+
+export interface LibraryItemDetail {
+  id: number;
+  kind: LibraryKind;
+  title: string;
+  tags: Tag[];
+  text: string;
+  slides: PresentationSlide[];
 }

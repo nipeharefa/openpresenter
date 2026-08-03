@@ -1,6 +1,15 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import type { LiveView, MonitorInfo, Song, Tag, Urutan } from "../types";
+import type {
+  LibraryItem,
+  LibraryItemDetail,
+  LibraryKind,
+  LiveView,
+  MonitorInfo,
+  PresentationSlide,
+  Tag,
+  Urutan,
+} from "../types";
 
 export const api = {
   listUrutan: () => invoke<Urutan[]>("list_urutan"),
@@ -26,20 +35,32 @@ export const api = {
   setProjectionMonitor: (name: string | null) =>
     invoke<void>("set_projection_monitor", { name }),
   getProjectionOpen: () => invoke<boolean>("get_projection_open"),
-  listSongs: (title: string | null, tags: string[]) =>
-    invoke<Song[]>("list_songs", { title, tags }),
-  createSong: (title: string, text: string) =>
-    invoke<Song>("create_song", { title, text }),
-  saveSong: (id: number, title: string, text: string) =>
-    invoke<Song>("save_song", { id, title, text }),
-  deleteSong: (id: number) => invoke<void>("delete_song", { id }),
+
+  listLibrary: (kind: LibraryKind | null, title: string | null, tags: string[]) =>
+    invoke<LibraryItem[]>("list_library", { kind, title, tags }),
+  getLibraryItem: (id: number) => invoke<LibraryItemDetail | null>("get_library_item", { id }),
+  createLibraryItem: (kind: LibraryKind, title: string) =>
+    invoke<LibraryItem>("create_library_item", { kind, title }),
+  renameLibraryItem: (id: number, title: string) =>
+    invoke<void>("rename_library_item", { id, title }),
+  deleteLibraryItem: (id: number) => invoke<void>("delete_library_item", { id }),
+  saveSongText: (itemId: number, text: string) =>
+    invoke<void>("save_song_text", { itemId, text }),
+  addSlide: (itemId: number, title: string, body: string) =>
+    invoke<PresentationSlide>("add_slide", { itemId, title, body }),
+  saveSlide: (id: number, title: string, body: string) =>
+    invoke<PresentationSlide>("save_slide", { id, title, body }),
+  deleteSlide: (id: number) => invoke<void>("delete_slide", { id }),
+  moveSlide: (itemId: number, slideId: number, newPosition: number) =>
+    invoke<void>("move_slide", { itemId, slideId, newPosition }),
   listTags: () => invoke<Tag[]>("list_tags"),
-  addSongTag: (songId: number, name: string) =>
-    invoke<Tag>("add_song_tag", { songId, name }),
-  removeSongTag: (songId: number, tagId: number) =>
-    invoke<void>("remove_song_tag", { songId, tagId }),
-  addSongToUrutan: (urutanId: number, songId: number) =>
-    invoke<void>("add_song_to_urutan", { urutanId, songId }),
+  addItemTag: (itemId: number, name: string) =>
+    invoke<Tag>("add_item_tag", { itemId, name }),
+  removeItemTag: (itemId: number, tagId: number) =>
+    invoke<void>("remove_item_tag", { itemId, tagId }),
+  addLibraryItemToUrutan: (urutanId: number, libraryItemId: number) =>
+    invoke<void>("add_library_item_to_urutan", { urutanId, libraryItemId }),
+
   getLive: () => invoke<LiveView>("get_live"),
 };
 
