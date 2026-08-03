@@ -28,7 +28,7 @@ export default function LivePreview({ live }: { live: LiveView | null }) {
   }
 
   const item = live.items[live.itemIndex];
-  const curSlide = item.slides[live.slideIndex];
+  const curSlide = item?.slides[live.slideIndex];
   const bg = live.black ? null : (curSlide?.background ?? null);
 
   return (
@@ -65,7 +65,7 @@ export default function LivePreview({ live }: { live: LiveView | null }) {
           {live.black ? "BLACK" : "LIVE"}
         </span>
         <span className="text-[11px] tabular-nums text-ink-muted" role="status">
-          {item.title || "(tanpa judul)"} · Slide {live.slideIndex + 1}/
+          {item?.title || "(tanpa judul)"} · Slide {live.slideIndex + 1}/
           {Math.max(live.slideCount, 1)}
         </span>
       </div>
