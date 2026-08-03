@@ -7,6 +7,7 @@ export interface LiveItem {
   id: number;
   title: string;
   text: string;
+  songId: number | null;
 }
 
 export interface LiveView {
@@ -29,4 +30,16 @@ export interface MonitorInfo {
   y: number;
   scaleFactor: number;
   isPrimary: boolean;
+}
+
+export interface Tag {
+  id: number;
+  name: string;
+}
+
+export interface Song {
+  id: number;
+  title: string;
+  text: string;
+  tags: Tag[];
 }

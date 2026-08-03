@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, onLiveChange, onProjectionChange } from "./lib/api";
 import { splitSlides } from "./lib/slides";
-import type { LiveView, MonitorInfo, Urutan } from "./types";
+import type { LiveView, MonitorInfo, Song, Tag, Urutan } from "./types";
 
-type Mode = "edit" | "live";
+type Mode = "edit" | "lagu" | "live";
 
 const HINT =
   "Pisahkan slide dengan satu baris kosong.\n\nContoh: bait pertama slide 1.\n\nBait kedua jadi slide 2.";
@@ -18,6 +18,7 @@ export default function App() {
   const [monitors, setMonitors] = useState<MonitorInfo[]>([]);
   const [projectionMonitor, setProjectionMonitorState] = useState<string>("");
   const [projectionOpen, setProjectionOpen] = useState(false);
+  const [libraryFocusId, setLibraryFocusId] = useState<number | null>(null);
 
   const newNameRef = useRef<HTMLInputElement>(null);
 
@@ -87,6 +88,13 @@ export default function App() {
     if (!window.confirm("Hapus item ini?")) return;
     await api.deleteItem(itemId);
     if (selectedItemId === itemId) setSelectedItemId(null);
+  }
+
+  const consumeFocus = useCallback(() => setLibraryFocusId(null), []);
+
+  function openLibraryAt(songId: number) {
+    setLibraryFocusId(songId);
+    setMode("lagu");
   }
 
   return (
@@ -187,6 +195,12 @@ export default function App() {
             Edit
           </button>
           <button
+            className={mode === "lagu" ? "seg__active" : ""}
+            onClick={() => setMode("lagu")}
+          >
+            Lagu
+          </button>
+          <button
             className={mode === "live" ? "seg__active" : ""}
             onClick={() => setMode("live")}
           >
@@ -203,6 +217,13 @@ export default function App() {
           onAdd={handleAddItem}
           onMove={handleMoveItem}
           onDelete={handleDeleteItem}
+          onOpenLibrary={openLibraryAt}
+        />
+      ) : mode === "lagu" ? (
+        <LibraryView
+          live={live}
+          focusId={libraryFocusId}
+          onFocusConsumed={consumeFocus}
         />
       ) : (
         <LiveView live={live} projectionOpen={projectionOpen} onStop={() => setMode("edit")} />
@@ -218,6 +239,7 @@ function EditView(props: {
   onAdd: () => void;
   onMove: (index: number, delta: number) => void;
   onDelete: (id: number) => void;
+  onOpenLibrary: (songId: number) => void;
 }) {
   const { live, selectedItemId } = props;
   const current = live?.items.find((i) => i.id === selectedItemId) ?? null;
@@ -277,6 +299,7 @@ function EditView(props: {
               <span className="edit__row-title">
                 {item.title || "(tanpa judul)"}
               </span>
+              {item.songId != null && <span className="badge">Lagu</span>}
               <span className="badge">{splitSlides(item.text).length}</span>
             </button>
             <span className="edit__row-actions">
@@ -310,29 +333,306 @@ function EditView(props: {
 
       <main className="edit__main">
         {current ? (
+          current.songId != null ? (
+            <>
+              <div className="edit__readonly-head">
+                <span className="badge">Lagu</span>
+                <button onClick={() => props.onOpenLibrary(current.songId!)}>
+                  Kelola di Library
+                </button>
+              </div>
+              <input
+                id="item-title"
+                className="edit__title"
+                value={current.title}
+                readOnly
+              />
+              <textarea
+                id="item-text"
+                className="edit__text"
+                value={current.text}
+                readOnly
+              />
+              <p className="hint">
+                Teks ini berasal dari Perpustakaan Lagu — edit di sana agar
+                semua Urutan ikut berubah.
+              </p>
+            </>
+          ) : (
+            <>
+              <label htmlFor="item-title">Judul</label>
+              <input
+                id="item-title"
+                className="edit__title"
+                placeholder="Judul item"
+                value={draft.title}
+                onChange={(e) => onDraftChange({ title: e.target.value })}
+              />
+              <label htmlFor="item-text">Teks</label>
+              <textarea
+                id="item-text"
+                className="edit__text"
+                placeholder={HINT}
+                value={draft.text}
+                onChange={(e) => onDraftChange({ text: e.target.value })}
+              />
+              <p className="hint">
+                Tersimpan otomatis · setiap baris kosong = slide baru
+              </p>
+            </>
+          )
+        ) : (
+          <p className="muted">Pilih atau tambahkan sebuah item.</p>
+        )}
+      </main>
+    </div>
+  );
+}
+
+function LibraryView(props: {
+  live: LiveView | null;
+  focusId: number | null;
+  onFocusConsumed: () => void;
+}) {
+  const { live, focusId, onFocusConsumed } = props;
+
+  const [search, setSearch] = useState("");
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [allTags, setAllTags] = useState<Tag[]>([]);
+  const [songs, setSongs] = useState<Song[]>([]);
+  const [selectedSong, setSelectedSong] = useState<Song | null>(null);
+
+  const [draft, setDraft] = useState({ title: "", text: "" });
+  const saveTimer = useRef<number | null>(null);
+  const savedRef = useRef({ title: "", text: "" });
+  const [newTag, setNewTag] = useState("");
+
+  const refresh = useCallback(
+    (q: string, tags: string[]) => {
+      api.listSongs(q.trim() || null, tags).then(setSongs);
+    },
+    [],
+  );
+
+  useEffect(() => {
+    api.listTags().then(setAllTags);
+    refresh("", []);
+  }, [refresh]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => refresh(search, selectedTags), 250);
+    return () => window.clearTimeout(timer);
+  }, [search, selectedTags, refresh]);
+
+  useEffect(() => {
+    if (focusId == null) return;
+    api.listSongs(null, []).then((list) => {
+      const found = list.find((s) => s.id === focusId) ?? null;
+      setSelectedSong(found);
+      setSongs(list);
+    });
+    setSearch("");
+    setSelectedTags([]);
+    onFocusConsumed();
+  }, [focusId, onFocusConsumed]);
+
+  useEffect(() => {
+    if (!selectedSong) {
+      setDraft({ title: "", text: "" });
+      savedRef.current = { title: "", text: "" };
+      return;
+    }
+    setDraft({ title: selectedSong.title, text: selectedSong.text });
+    savedRef.current = { title: selectedSong.title, text: selectedSong.text };
+  }, [selectedSong]);
+
+  const save = useCallback(() => {
+    if (!selectedSong) return;
+    if (
+      draft.title === savedRef.current.title &&
+      draft.text === savedRef.current.text
+    )
+      return;
+    savedRef.current = { title: draft.title, text: draft.text };
+    api.saveSong(selectedSong.id, draft.title, draft.text).then((updated) => {
+      setSelectedSong((cur) => (cur && cur.id === updated.id ? updated : cur));
+      refresh(search, selectedTags);
+    });
+  }, [selectedSong, draft, refresh, search, selectedTags]);
+
+  function onDraftChange(patch: { title?: string; text?: string }) {
+    setDraft((d) => ({ ...d, ...patch }));
+    if (saveTimer.current) window.clearTimeout(saveTimer.current);
+    saveTimer.current = window.setTimeout(save, 500);
+  }
+
+  function toggleTag(name: string) {
+    setSelectedTags((tags) =>
+      tags.includes(name) ? tags.filter((t) => t !== name) : [...tags, name],
+    );
+  }
+
+  async function handleAddTag() {
+    const name = newTag.trim();
+    if (!name || !selectedSong) return;
+    const tag = await api.addSongTag(selectedSong.id, name);
+    setNewTag("");
+    setSelectedSong((cur) =>
+      cur
+        ? { ...cur, tags: [...cur.tags.filter((t) => t.id !== tag.id), tag] }
+        : cur,
+    );
+    setAllTags(await api.listTags());
+    refresh(search, selectedTags);
+  }
+
+  async function handleRemoveTag(tagId: number) {
+    if (!selectedSong) return;
+    await api.removeSongTag(selectedSong.id, tagId);
+    setSelectedSong((cur) =>
+      cur ? { ...cur, tags: cur.tags.filter((t) => t.id !== tagId) } : cur,
+    );
+    refresh(search, selectedTags);
+  }
+
+  async function handleCreateSong() {
+    const created = await api.createSong("Lagu baru", "");
+    setSelectedSong(created);
+    refresh("", []);
+    setSearch("");
+    setSelectedTags([]);
+  }
+
+  async function handleDeleteSong() {
+    if (!selectedSong) return;
+    if (!window.confirm(`Hapus lagu "${selectedSong.title}"?`)) return;
+    await api.deleteSong(selectedSong.id);
+    setSelectedSong(null);
+    refresh(search, selectedTags);
+  }
+
+  async function handleAddToUrutan() {
+    if (!live?.urutanId || !selectedSong) return;
+    await api.addSongToUrutan(live.urutanId, selectedSong.id);
+  }
+
+  return (
+    <div className="lib">
+      <aside className="lib__list">
+        <div className="lib__toolbar">
+          <input
+            placeholder="Cari judul…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            aria-label="Cari judul lagu"
+          />
+          <button onClick={handleCreateSong}>+ Lagu</button>
+        </div>
+        <div className="lib__tags" aria-label="Filter tag">
+          <button
+            className={"chip" + (selectedTags.length === 0 ? " chip--on" : "")}
+            onClick={() => setSelectedTags([])}
+          >
+            Semua
+          </button>
+          {allTags.map((t) => (
+            <button
+              key={t.id}
+              className={
+                "chip" + (selectedTags.includes(t.name) ? " chip--on" : "")
+              }
+              onClick={() => toggleTag(t.name)}
+            >
+              {t.name}
+            </button>
+          ))}
+        </div>
+        <div className="lib__songs">
+          {songs.map((s) => (
+            <button
+              key={s.id}
+              type="button"
+              className={
+                "lib__song" +
+                (selectedSong?.id === s.id ? " lib__song--active" : "")
+              }
+              onClick={() => setSelectedSong(s)}
+            >
+              <span className="lib__song-title">{s.title}</span>
+              <span className="badge">{splitSlides(s.text).length}</span>
+            </button>
+          ))}
+          {songs.length === 0 && (
+            <p className="muted">
+              Tidak ada lagu yang cocok. Ubah filter tag atau tambah lagu baru.
+            </p>
+          )}
+        </div>
+      </aside>
+
+      <main className="lib__detail">
+        {selectedSong ? (
           <>
-            <label htmlFor="item-title">Judul</label>
+            <label htmlFor="song-title">Judul</label>
             <input
-              id="item-title"
+              id="song-title"
               className="edit__title"
-              placeholder="Judul item"
               value={draft.title}
               onChange={(e) => onDraftChange({ title: e.target.value })}
             />
-            <label htmlFor="item-text">Teks</label>
+            <label htmlFor="song-text">Lirik</label>
             <textarea
-              id="item-text"
+              id="song-text"
               className="edit__text"
               placeholder={HINT}
               value={draft.text}
               onChange={(e) => onDraftChange({ text: e.target.value })}
             />
+            <div className="lib__tags-editor">
+              <span className="lib__tags-label">Tag</span>
+              {selectedSong.tags.map((t) => (
+                <span key={t.id} className="tag-chip">
+                  {t.name}
+                  <button
+                    onClick={() => handleRemoveTag(t.id)}
+                    aria-label={`Hapus tag ${t.name}`}
+                    title={`Hapus tag ${t.name}`}
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+              <input
+                placeholder="+ tag"
+                value={newTag}
+                onChange={(e) => setNewTag(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleAddTag();
+                  if (e.key === "Escape") setNewTag("");
+                }}
+                aria-label="Tambah tag"
+              />
+            </div>
             <p className="hint">
               Tersimpan otomatis · setiap baris kosong = slide baru
             </p>
+            <div className="lib__actions">
+              <button
+                className="btn--primary"
+                onClick={handleAddToUrutan}
+                disabled={!live?.loaded}
+                title={live?.loaded ? "" : "Pilih Urutan dulu"}
+              >
+                Tambah ke Urutan
+                {live?.loaded ? ` “${live.urutanName}”` : ""}
+              </button>
+              <button onClick={handleDeleteSong}>Hapus Lagu</button>
+            </div>
           </>
         ) : (
-          <p className="muted">Pilih atau tambahkan sebuah item.</p>
+          <p className="muted">
+            Pilih lagu dari daftar, atau buat lagu baru dengan tombol + Lagu.
+          </p>
         )}
       </main>
     </div>

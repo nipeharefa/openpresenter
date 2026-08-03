@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import type { LiveView, MonitorInfo, Urutan } from "../types";
+import type { LiveView, MonitorInfo, Song, Tag, Urutan } from "../types";
 
 export const api = {
   listUrutan: () => invoke<Urutan[]>("list_urutan"),
@@ -26,6 +26,20 @@ export const api = {
   setProjectionMonitor: (name: string | null) =>
     invoke<void>("set_projection_monitor", { name }),
   getProjectionOpen: () => invoke<boolean>("get_projection_open"),
+  listSongs: (title: string | null, tags: string[]) =>
+    invoke<Song[]>("list_songs", { title, tags }),
+  createSong: (title: string, text: string) =>
+    invoke<Song>("create_song", { title, text }),
+  saveSong: (id: number, title: string, text: string) =>
+    invoke<Song>("save_song", { id, title, text }),
+  deleteSong: (id: number) => invoke<void>("delete_song", { id }),
+  listTags: () => invoke<Tag[]>("list_tags"),
+  addSongTag: (songId: number, name: string) =>
+    invoke<Tag>("add_song_tag", { songId, name }),
+  removeSongTag: (songId: number, tagId: number) =>
+    invoke<void>("remove_song_tag", { songId, tagId }),
+  addSongToUrutan: (urutanId: number, songId: number) =>
+    invoke<void>("add_song_to_urutan", { urutanId, songId }),
   getLive: () => invoke<LiveView>("get_live"),
 };
 

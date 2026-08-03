@@ -8,6 +8,7 @@ pub struct LiveItem {
     pub id: i64,
     pub title: String,
     pub text: String,
+    pub song_id: Option<i64>,
 }
 
 #[derive(Serialize, Clone, Debug)]
