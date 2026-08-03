@@ -15,11 +15,11 @@ export default function Projection() {
   const black = !live || !live.loaded || live.black;
 
   return (
-    <div className="proj layer-overlay">
+    <div className="flex h-full w-full select-none items-center justify-center bg-black text-[#f2f1ec]">
       {!black && (
         <div
           key={`${live?.itemIndex}:${live?.slideIndex}`}
-          className="proj__slide"
+          className="max-w-[100vw] animate-[proj-in_200ms_ease] whitespace-pre-line px-[8vw] py-[5vh] text-center text-[clamp(1.75rem,7vw,5.5rem)] leading-[1.35]"
         >
           {live?.slideText}
         </div>

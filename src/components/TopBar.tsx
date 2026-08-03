@@ -57,15 +57,18 @@ export default function TopBar(props: TopBarProps) {
   }
 
   return (
-    <header className="topbar layer-surface-1">
-      <span className="brand">
-        <span className="brand__dot" aria-hidden="true" />
+    <header className="z-10 flex shrink-0 items-center gap-2 border-b border-surface-3 bg-surface-1 px-3.5 py-2">
+      <span className="mr-1.5 flex items-center gap-2 font-semibold">
+        <span
+          className="h-2.5 w-2.5 rounded-full bg-brand shadow-[0_0_0_3px_var(--color-brand-weak)]"
+          aria-hidden="true"
+        />
         OpenPresenter
       </span>
 
-      <div className="topbar__group">
+      <div className="flex items-center gap-1.5">
         <select
-          className="select"
+          className="max-w-[220px]"
           value={live?.urutanId ?? ""}
           onChange={(e) => onSelectUrutan(Number(e.target.value))}
           aria-label="Urutan Ibadah"
@@ -83,7 +86,7 @@ export default function TopBar(props: TopBarProps) {
           <>
             <input
               ref={inputRef}
-              className="topbar__input"
+              className="w-44"
               placeholder="Nama urutan baru"
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
@@ -93,7 +96,7 @@ export default function TopBar(props: TopBarProps) {
               }}
               aria-label="Nama urutan baru"
             />
-            <button onClick={handleCreate} className="btn--primary">
+            <button onClick={handleCreate} className="border-brand bg-brand text-white">
               Simpan
             </button>
             <button onClick={cancel}>Batal</button>
@@ -117,11 +120,11 @@ export default function TopBar(props: TopBarProps) {
         </button>
       </div>
 
-      <div className="topbar__spacer" />
+      <div className="flex-1" />
 
-      <div className="topbar__group topbar__group--bordered">
+      <div className="ml-1.5 flex items-center gap-1.5 border-l border-surface-3 pl-3">
         <select
-          className="select"
+          className="max-w-[220px]"
           value={projectionMonitor}
           onChange={(e) => onProjectionMonitor(e.target.value)}
           disabled={monitors.length === 0}
@@ -141,11 +144,14 @@ export default function TopBar(props: TopBarProps) {
         </button>
       </div>
 
-      <div className="seg">
+      <div className="flex overflow-hidden rounded-md border border-surface-3 bg-surface-2">
         {MODES.map((m) => (
           <button
             key={m}
-            className={mode === m ? "seg__active" : ""}
+            className={
+              "border-none bg-transparent px-4 py-1.5 text-ink-muted hover:border-none hover:text-ink" +
+              (mode === m ? " bg-brand-weak text-brand" : "")
+            }
             onClick={() => onMode(m)}
           >
             {MODE_LABELS[m]}
