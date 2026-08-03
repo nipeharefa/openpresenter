@@ -1,20 +1,22 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, onLiveChange, onProjectionChange } from "./lib/api";
-import TopBar from "./components/TopBar";
-import EditView from "./components/EditView";
-import LibraryView from "./components/LibraryView";
-import LiveView from "./components/LiveView";
-import type { LiveView as LiveViewState, Mode, MonitorInfo, Urutan } from "./types";
+import HeaderBar from "./components/HeaderBar";
+import LibraryPanel from "./components/LibraryPanel";
+import CueListPanel from "./components/CueListPanel";
+import InspectorPanel, { type Selection } from "./components/InspectorPanel";
+import TransportBar from "./components/TransportBar";
+import type { LiveView as LiveViewState, MonitorInfo, Urutan } from "./types";
 
 export default function App() {
   const [urutans, setUrutans] = useState<Urutan[]>([]);
   const [live, setLive] = useState<LiveViewState | null>(null);
-  const [mode, setMode] = useState<Mode>("edit");
-  const [selectedItemId, setSelectedItemId] = useState<number | null>(null);
   const [monitors, setMonitors] = useState<MonitorInfo[]>([]);
   const [projectionMonitor, setProjectionMonitorState] = useState<string>("");
   const [projectionOpen, setProjectionOpen] = useState(false);
-  const [libraryFocusId, setLibraryFocusId] = useState<number | null>(null);
+  const [selection, setSelection] = useState<Selection>(null);
+  const [libRefresh, setLibRefresh] = useState(0);
+
+  const bumpLib = useCallback(() => setLibRefresh((k) => k + 1), []);
 
   useEffect(() => {
     api.listUrutan().then(setUrutans);
@@ -32,25 +34,56 @@ export default function App() {
     };
   }, []);
 
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.tagName === "SELECT" ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+      if (e.code === "Space" || e.code === "Enter") {
+        e.preventDefault();
+        api.nextSlide();
+      } else if (
+        e.code === "Backspace" ||
+        e.code === "ArrowLeft" ||
+        e.code === "ArrowUp"
+      ) {
+        e.preventDefault();
+        api.prevSlide();
+      } else if (e.key === "b" || e.key === "B") {
+        api.toggleBlack();
+      } else if (e.key === "Escape") {
+        if (projectionOpen) api.stopLive();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [projectionOpen]);
+
   async function handleSelectUrutan(id: number) {
     await api.loadUrutan(id);
     setUrutans(await api.listUrutan());
-    setSelectedItemId(null);
-    setMode("edit");
+    setSelection(null);
   }
 
   async function handleDeleteUrutan() {
     if (!live?.urutanId) return;
     if (!window.confirm("Hapus urutan ini beserta semua itemnya?")) return;
     await api.deleteUrutan(live.urutanId);
-    setSelectedItemId(null);
+    setSelection(null);
     setUrutans(await api.listUrutan());
   }
 
-  async function handleAddItem() {
+  async function handleAddTextItem() {
     if (!live?.urutanId) return;
     const created = await api.addItem(live.urutanId, "Item baru", "");
-    setSelectedItemId(created.id);
+    setSelection({ type: "cue", id: created.id });
   }
 
   async function handleMoveItem(index: number, delta: number) {
@@ -62,21 +95,16 @@ export default function App() {
   async function handleDeleteItem(itemId: number) {
     if (!window.confirm("Hapus item ini?")) return;
     await api.deleteItem(itemId);
-    if (selectedItemId === itemId) setSelectedItemId(null);
+    if (selection?.type === "cue" && selection.id === itemId) setSelection(null);
   }
 
-  const consumeFocus = useCallback(() => setLibraryFocusId(null), []);
-
-  function openLibraryAt(itemId: number) {
-    setLibraryFocusId(itemId);
-    setMode("library");
+  function openLibrary(libraryItemId: number) {
+    setSelection({ type: "library", id: libraryItemId });
   }
 
   return (
     <div className="flex h-full flex-col">
-      <TopBar
-        mode={mode}
-        onMode={setMode}
+      <HeaderBar
         live={live}
         urutans={urutans}
         monitors={monitors}
@@ -89,29 +117,30 @@ export default function App() {
         onDeleteUrutan={handleDeleteUrutan}
       />
 
-      {mode === "edit" ? (
-        <EditView
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-2 p-2 lg:grid-cols-[240px_minmax(0,1fr)_320px]">
+        <LibraryPanel
+          selectedId={selection?.type === "library" ? selection.id : null}
+          onSelect={(item) => setSelection({ type: "library", id: item.id })}
+          refreshKey={libRefresh}
+        />
+        <CueListPanel
           live={live}
-          selectedItemId={selectedItemId}
-          setSelectedItemId={setSelectedItemId}
-          onAdd={handleAddItem}
+          selectedItemId={selection?.type === "cue" ? selection.id : null}
+          onSelect={(itemId) => setSelection({ type: "cue", id: itemId })}
+          onAddText={handleAddTextItem}
           onMove={handleMoveItem}
           onDelete={handleDeleteItem}
-          onOpenLibrary={openLibraryAt}
         />
-      ) : mode === "library" ? (
-        <LibraryView
+        <InspectorPanel
+          selection={selection}
           live={live}
-          focusId={libraryFocusId}
-          onFocusConsumed={consumeFocus}
+          onOpenLibrary={openLibrary}
+          onClearSelection={() => setSelection(null)}
+          onChanged={bumpLib}
         />
-      ) : (
-        <LiveView
-          live={live}
-          projectionOpen={projectionOpen}
-          onStop={() => setMode("edit")}
-        />
-      )}
+      </div>
+
+      <TransportBar live={live} projectionOpen={projectionOpen} />
     </div>
   );
 }

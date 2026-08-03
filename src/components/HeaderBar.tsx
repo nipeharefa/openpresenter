@@ -1,10 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "../lib/api";
-import type { LiveView, Mode, MonitorInfo, Urutan } from "../types";
+import type { LiveView, MonitorInfo, Urutan } from "../types";
 
-interface TopBarProps {
-  mode: Mode;
-  onMode: (mode: Mode) => void;
+interface HeaderBarProps {
   live: LiveView | null;
   urutans: Urutan[];
   monitors: MonitorInfo[];
@@ -14,17 +12,8 @@ interface TopBarProps {
   onDeleteUrutan: () => void;
 }
 
-const MODES: Mode[] = ["edit", "library", "live"];
-const MODE_LABELS: Record<Mode, string> = {
-  edit: "Edit",
-  library: "Library",
-  live: "Live",
-};
-
-export default function TopBar(props: TopBarProps) {
+export default function HeaderBar(props: HeaderBarProps) {
   const {
-    mode,
-    onMode,
     live,
     urutans,
     monitors,
@@ -142,21 +131,6 @@ export default function TopBar(props: TopBarProps) {
         <button onClick={() => api.openProjection(projectionMonitor || null)}>
           Proyeksi
         </button>
-      </div>
-
-      <div className="flex overflow-hidden rounded-md border border-surface-3 bg-surface-2">
-        {MODES.map((m) => (
-          <button
-            key={m}
-            className={
-              "border-none bg-transparent px-4 py-1.5 text-ink-muted hover:border-none hover:text-ink" +
-              (mode === m ? " bg-brand-weak text-brand" : "")
-            }
-            onClick={() => onMode(m)}
-          >
-            {MODE_LABELS[m]}
-          </button>
-        ))}
       </div>
     </header>
   );

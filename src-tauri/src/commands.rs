@@ -291,6 +291,9 @@ pub fn open_projection(
         .inner_size(width, height)
         .position(x, y)
         .background_color(tauri::window::Color(0, 0, 0, 255))
+        .additional_browser_args(
+            "--disable-background-timer-throttling --disable-renderer-backgrounding --disable-backgrounding-occluded-windows",
+        )
         .build()
         .map_err(|e| e.to_string())?;
     window.set_fullscreen(true).map_err(|e| e.to_string())?;
