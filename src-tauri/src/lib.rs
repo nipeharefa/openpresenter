@@ -37,6 +37,7 @@ pub fn run() {
                                 id: item.id,
                                 title: item.title,
                                 text: item.text,
+                                song_id: item.song_id,
                             })
                             .collect();
                     }
@@ -64,6 +65,14 @@ pub fn run() {
             commands::list_monitors,
             commands::set_projection_monitor,
             commands::get_projection_monitor,
+            commands::list_songs,
+            commands::create_song,
+            commands::save_song,
+            commands::delete_song,
+            commands::list_tags,
+            commands::add_song_tag,
+            commands::remove_song_tag,
+            commands::add_song_to_urutan,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
