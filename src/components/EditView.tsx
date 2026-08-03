@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../lib/api";
 import { itemSlideCount, kindLabel } from "../lib/slides";
 import type { LiveView } from "../types";
-import { Badge } from "./common";
+import { Badge, Hint } from "./common";
 
 const HINT =
   "Pisahkan slide dengan satu baris kosong.\n\nContoh: bait pertama slide 1.\n\nBait kedua jadi slide 2.";
@@ -48,16 +48,16 @@ export default function EditView(props: EditViewProps) {
   }
 
   return (
-    <div className="edit">
-      <aside className="edit__list layer-surface-1">
-        <div className="edit__list-head">
+    <div className="flex min-h-0 flex-1">
+      <aside className="w-72 shrink-0 overflow-y-auto border-r border-surface-3 bg-surface-1 p-2.5">
+        <div className="flex items-center justify-between px-1 pb-2 text-xs font-semibold uppercase tracking-wider text-ink-muted">
           <span>Item</span>
           <button onClick={props.onAdd} disabled={!live?.loaded}>
             + Item
           </button>
         </div>
         {live?.items.length === 0 && (
-          <p className="muted">
+          <p className="m-0 text-ink-muted">
             Belum ada item. Tambahkan lagu, ayat, atau pengumuman.
           </p>
         )}
@@ -65,26 +65,28 @@ export default function EditView(props: EditViewProps) {
           <div
             key={item.id}
             className={
-              "edit__row" + (item.id === selectedItemId ? " edit__row--active" : "")
+              "flex items-center gap-1.5 rounded-md" +
+              (item.id === selectedItemId
+                ? " bg-brand-weak shadow-[inset_3px_0_0_var(--color-brand)]"
+                : "")
             }
           >
             <button
               type="button"
-              className="edit__row-select"
+              className="flex min-w-0 flex-1 items-center gap-2 border-none bg-transparent px-2.5 py-2 text-left text-ink hover:border-none hover:bg-surface-2"
               onClick={() => props.setSelectedItemId(item.id)}
             >
-              <span className="edit__row-title">
+              <span className="flex-1 truncate">
                 {item.title || "(tanpa judul)"}
               </span>
-              {item.libraryItemId != null && (
-                <Badge>{kindLabel(item.kind)}</Badge>
-              )}
+              {item.libraryItemId != null && <Badge>{kindLabel(item.kind)}</Badge>}
               <Badge>{itemSlideCount(item)}</Badge>
             </button>
-            <span className="edit__row-actions">
+            <span className="flex gap-0.5 pr-1.5">
               <button
                 disabled={index === 0}
                 onClick={() => props.onMove(index, -1)}
+                className="rounded px-1.5 py-0.5 text-xs text-ink-muted hover:border-surface-3 hover:text-ink"
                 aria-label="Pindah ke atas"
                 title="Pindah ke atas"
               >
@@ -93,6 +95,7 @@ export default function EditView(props: EditViewProps) {
               <button
                 disabled={index >= live.items.length - 1}
                 onClick={() => props.onMove(index, 1)}
+                className="rounded px-1.5 py-0.5 text-xs text-ink-muted hover:border-surface-3 hover:text-ink"
                 aria-label="Pindah ke bawah"
                 title="Pindah ke bawah"
               >
@@ -100,6 +103,7 @@ export default function EditView(props: EditViewProps) {
               </button>
               <button
                 onClick={() => props.onDelete(item.id)}
+                className="rounded px-1.5 py-0.5 text-xs text-ink-muted hover:border-surface-3 hover:text-ink"
                 aria-label="Hapus item"
                 title="Hapus item"
               >
@@ -110,11 +114,11 @@ export default function EditView(props: EditViewProps) {
         ))}
       </aside>
 
-      <main className="edit__main">
+      <main className="flex min-w-0 flex-1 flex-col gap-2 px-5 py-4">
         {current ? (
           current.libraryItemId != null ? (
             <>
-              <div className="edit__readonly-head">
+              <div className="flex items-center gap-2">
                 <Badge>{kindLabel(current.kind)}</Badge>
                 <button onClick={() => props.onOpenLibrary(current.libraryItemId!)}>
                   Kelola di Library
@@ -122,46 +126,56 @@ export default function EditView(props: EditViewProps) {
               </div>
               <input
                 id="item-title"
-                className="edit__title"
+                className="w-full px-3 py-2 text-lg font-semibold"
                 value={current.title}
                 readOnly
               />
               <textarea
                 id="item-text"
-                className="edit__text"
+                className="min-h-0 flex-1 resize-none px-3 py-3 text-[15px] leading-relaxed"
                 value={current.slides.length ? current.slides.join("\n\n") : current.text}
                 readOnly
               />
-              <p className="hint">
+              <Hint>
                 Konten ini berasal dari Library — edit di sana agar semua Urutan
                 ikut berubah.
-              </p>
+              </Hint>
             </>
           ) : (
             <>
-              <label htmlFor="item-title">Judul</label>
+              <label
+                htmlFor="item-title"
+                className="text-xs font-semibold uppercase tracking-wider text-ink-muted"
+              >
+                Judul
+              </label>
               <input
                 id="item-title"
-                className="edit__title"
+                className="w-full px-3 py-2 text-lg font-semibold"
                 placeholder="Judul item"
                 value={draft.title}
                 onChange={(e) => onDraftChange({ title: e.target.value })}
               />
-              <label htmlFor="item-text">Teks</label>
+              <label
+                htmlFor="item-text"
+                className="text-xs font-semibold uppercase tracking-wider text-ink-muted"
+              >
+                Teks
+              </label>
               <textarea
                 id="item-text"
-                className="edit__text"
+                className="min-h-0 flex-1 resize-none px-3 py-3 text-[15px] leading-relaxed"
                 placeholder={HINT}
                 value={draft.text}
                 onChange={(e) => onDraftChange({ text: e.target.value })}
               />
-              <p className="hint">
+              <Hint>
                 Tersimpan otomatis · setiap baris kosong = slide baru
-              </p>
+              </Hint>
             </>
           )
         ) : (
-          <p className="muted">Pilih atau tambahkan sebuah item.</p>
+          <p className="m-0 text-ink-muted">Pilih atau tambahkan sebuah item.</p>
         )}
       </main>
     </div>

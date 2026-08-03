@@ -89,10 +89,11 @@ export default function LibraryView({ live, focusId, onFocusConsumed }: LibraryV
   }
 
   return (
-    <div className="lib">
-      <aside className="lib__list layer-surface-1">
-        <div className="lib__toolbar">
+    <div className="flex min-h-0 flex-1">
+      <aside className="w-72 shrink-0 overflow-y-auto border-r border-surface-3 bg-surface-1 p-2.5">
+        <div className="mb-2 flex gap-1.5">
           <input
+            className="min-w-0 flex-1"
             placeholder="Cari judul…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -104,7 +105,7 @@ export default function LibraryView({ live, focusId, onFocusConsumed }: LibraryV
           </button>
         </div>
 
-        <div className="lib__tags" aria-label="Filter jenis">
+        <div className="flex flex-wrap gap-1 pb-2.5 pt-0.5" aria-label="Filter jenis">
           <Chip active={kindFilter === "all"} onClick={() => setKindFilter("all")}>
             Semua
           </Chip>
@@ -119,7 +120,7 @@ export default function LibraryView({ live, focusId, onFocusConsumed }: LibraryV
           </Chip>
         </div>
 
-        <div className="lib__tags" aria-label="Filter tag">
+        <div className="flex flex-wrap gap-1 pb-2.5 pt-0.5" aria-label="Filter tag">
           <Chip
             active={selectedTags.length === 0}
             onClick={() => setSelectedTags([])}
@@ -137,29 +138,32 @@ export default function LibraryView({ live, focusId, onFocusConsumed }: LibraryV
           ))}
         </div>
 
-        <div className="lib__songs">
+        <div className="flex flex-col gap-0.5">
           {items.map((it) => (
             <button
               key={it.id}
               type="button"
               className={
-                "lib__song" + (selected?.id === it.id ? " lib__song--active" : "")
+                "flex items-center justify-between gap-2 rounded-md border border-transparent px-2.5 py-2 text-left text-ink hover:bg-surface-2" +
+                (selected?.id === it.id
+                  ? " bg-brand-weak text-white shadow-[inset_3px_0_0_var(--color-brand)]"
+                  : "")
               }
               onClick={() => setSelected(it)}
             >
-              <span className="lib__song-title">{it.title}</span>
+              <span className="flex-1 truncate">{it.title}</span>
               <Badge>{it.kind === "presentation" ? "Presentasi" : "Lagu"}</Badge>
             </button>
           ))}
           {items.length === 0 && (
-            <p className="muted">
+            <p className="m-0 text-ink-muted">
               Tidak ada konten yang cocok. Ubah filter atau buat baru.
             </p>
           )}
         </div>
       </aside>
 
-      <main className="lib__detail">
+      <main className="flex min-w-0 flex-1 flex-col gap-2 px-5 py-4">
         {selected && detail ? (
           <LibraryDetail
             detail={detail}
@@ -173,7 +177,7 @@ export default function LibraryView({ live, focusId, onFocusConsumed }: LibraryV
             }}
           />
         ) : (
-          <p className="muted">
+          <p className="m-0 text-ink-muted">
             Pilih konten dari daftar, atau buat lagu / presentasi baru.
           </p>
         )}
@@ -232,7 +236,7 @@ function LibraryDetail(props: {
 
   return (
     <>
-      <div className="edit__readonly-head">
+      <div className="flex items-center gap-2">
         <Badge>{detail.kind === "presentation" ? "Presentasi" : "Lagu"}</Badge>
       </div>
 
@@ -248,13 +252,19 @@ function LibraryDetail(props: {
         <LibrarySongText itemId={detail.id} text={detail.text} />
       )}
 
-      <div className="lib__tags-editor">
-        <span className="lib__tags-label">Tag</span>
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
+          Tag
+        </span>
         {detail.tags.map((t) => (
-          <span key={t.id} className="tag-chip">
+          <span
+            key={t.id}
+            className="inline-flex items-center gap-1 rounded-full border border-brand bg-brand-weak px-2 py-0.5 text-xs text-brand"
+          >
             {t.name}
             <button
               onClick={() => handleRemoveTag(t.id)}
+              className="border-none bg-transparent p-0 text-[13px] leading-none text-inherit"
               aria-label={`Hapus tag ${t.name}`}
               title={`Hapus tag ${t.name}`}
             >
@@ -263,6 +273,7 @@ function LibraryDetail(props: {
           </span>
         ))}
         <input
+          className="w-28 px-2 py-0.5 text-[13px]"
           placeholder="+ tag"
           value={newTag}
           onChange={(e) => setNewTag(e.target.value)}
@@ -276,9 +287,9 @@ function LibraryDetail(props: {
 
       <Hint>Tersimpan otomatis.</Hint>
 
-      <div className="lib__actions">
+      <div className="flex items-center gap-2">
         <button
-          className="btn--primary"
+          className="border-brand bg-brand text-white"
           onClick={handleAddToUrutan}
           disabled={!live?.loaded}
           title={live?.loaded ? "" : "Pilih Urutan dulu"}
@@ -325,10 +336,15 @@ function LibraryTitle(props: {
 
   return (
     <>
-      <label htmlFor="lib-title">Judul</label>
+      <label
+        htmlFor="lib-title"
+        className="text-xs font-semibold uppercase tracking-wider text-ink-muted"
+      >
+        Judul
+      </label>
       <input
         id="lib-title"
-        className="edit__title"
+        className="w-full px-3 py-2 text-lg font-semibold"
         value={draft}
         onChange={(e) => onChange(e.target.value)}
       />
@@ -364,10 +380,15 @@ function LibrarySongText(props: { itemId: number; text: string }) {
 
   return (
     <>
-      <label htmlFor="lib-text">Lirik</label>
+      <label
+        htmlFor="lib-text"
+        className="text-xs font-semibold uppercase tracking-wider text-ink-muted"
+      >
+        Lirik
+      </label>
       <textarea
         id="lib-text"
-        className="edit__text"
+        className="min-h-0 flex-1 resize-none px-3 py-3 text-[15px] leading-relaxed"
         placeholder={HINT}
         value={draft}
         onChange={(e) => onChange(e.target.value)}
@@ -426,18 +447,24 @@ function PresentationSlides(props: {
   }
 
   return (
-    <div className="pres">
-      <div className="pres__head">
-        <span className="pres__count">{slides.length} slide</span>
+    <div className="flex flex-col gap-2.5">
+      <div className="flex items-center justify-between">
+        <span className="text-xs text-ink-muted">{slides.length} slide</span>
         <button onClick={add}>+ Slide</button>
       </div>
       {slides.map((s, i) => (
-        <div key={s.id} className="pres__slide layer-surface-1">
-          <div className="pres__slide-head">
-            <span className="pres__slide-index">{i + 1}</span>
+        <div
+          key={s.id}
+          className="flex flex-col gap-1.5 rounded-md border border-surface-3 bg-surface-1 p-2.5"
+        >
+          <div className="flex items-center gap-1">
+            <span className="mr-1 min-w-[18px] text-xs font-semibold text-ink-muted">
+              {i + 1}
+            </span>
             <button
               disabled={i === 0}
               onClick={() => move(i, -1)}
+              className="rounded px-2 py-0.5 text-xs"
               aria-label="Pindah slide ke atas"
             >
               ↑
@@ -445,11 +472,16 @@ function PresentationSlides(props: {
             <button
               disabled={i >= slides.length - 1}
               onClick={() => move(i, 1)}
+              className="rounded px-2 py-0.5 text-xs"
               aria-label="Pindah slide ke bawah"
             >
               ↓
             </button>
-            <button onClick={() => remove(s.id)} aria-label="Hapus slide">
+            <button
+              onClick={() => remove(s.id)}
+              className="rounded px-2 py-0.5 text-xs"
+              aria-label="Hapus slide"
+            >
               ×
             </button>
           </div>
@@ -459,7 +491,7 @@ function PresentationSlides(props: {
             onChange={(e) => onChange(s.id, { title: e.target.value })}
           />
           <textarea
-            className="pres__body"
+            className="min-h-[90px] resize-y leading-relaxed"
             placeholder="Isi slide (yang ditayangkan)"
             value={s.body}
             onChange={(e) => onChange(s.id, { body: e.target.value })}
@@ -467,7 +499,7 @@ function PresentationSlides(props: {
         </div>
       ))}
       {slides.length === 0 && (
-        <p className="muted">
+        <p className="m-0 text-ink-muted">
           Belum ada slide. Tambahkan slide pertama dengan tombol + Slide.
         </p>
       )}

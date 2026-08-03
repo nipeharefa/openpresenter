@@ -2,7 +2,11 @@ import { kindLabel } from "../lib/slides";
 import type { ReactNode } from "react";
 
 export function Badge({ children }: { children: ReactNode }) {
-  return <span className="badge">{children}</span>;
+  return (
+    <span className="inline-flex shrink-0 whitespace-nowrap rounded-full border border-surface-3 bg-surface-2 px-1.5 py-0.5 text-xs text-ink-muted">
+      {children}
+    </span>
+  );
 }
 
 export function KindBadge({ kind }: { kind: string | null | undefined }) {
@@ -21,7 +25,10 @@ export function Chip({
   return (
     <button
       type="button"
-      className={"chip" + (active ? " chip--on" : "")}
+      className={
+        "rounded-full border border-surface-3 bg-surface-2 px-2.5 py-1 text-xs text-ink-muted" +
+        (active ? " border-brand bg-brand-weak text-brand" : "")
+      }
       onClick={onClick}
     >
       {children}
@@ -30,5 +37,5 @@ export function Chip({
 }
 
 export function Hint({ children }: { children: ReactNode }) {
-  return <p className="hint">{children}</p>;
+  return <p className="m-0 text-center text-xs text-ink-muted">{children}</p>;
 }
