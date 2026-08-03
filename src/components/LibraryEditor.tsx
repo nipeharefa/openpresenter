@@ -103,7 +103,14 @@ export default function LibraryEditor({
       ) : detail.kind === "media" && detail.media ? (
         <MediaPreview media={detail.media} />
       ) : (
-        <AutoSongText itemId={detail.id} text={detail.text} />
+        <>
+          <AutoSongText itemId={detail.id} text={detail.text} />
+          <SongMeta
+            itemId={detail.id}
+            songKey={detail.songKey}
+            tempo={detail.tempo}
+          />
+        </>
       )}
 
       <TagEditor
@@ -372,6 +379,63 @@ function MediaPreview({ media }: { media: MediaInfo }) {
       <p className="m-0 text-xs text-ink-muted">
         {media.fileName} · {media.mediaType}
       </p>
+    </div>
+  );
+}
+
+function SongMeta(props: { itemId: number; songKey: string; tempo: string }) {
+  const [keyDraft, setKeyDraft] = useState(props.songKey);
+  const [tempoDraft, setTempoDraft] = useState(props.tempo);
+  const timer = useRef<number | null>(null);
+
+  useEffect(() => {
+    setKeyDraft(props.songKey);
+    setTempoDraft(props.tempo);
+  }, [props.itemId, props.songKey, props.tempo]);
+
+  useEffect(() => {
+    return () => {
+      if (timer.current) window.clearTimeout(timer.current);
+    };
+  }, []);
+
+  function scheduleSave() {
+    if (timer.current) window.clearTimeout(timer.current);
+    timer.current = window.setTimeout(() => {
+      api.saveSongMeta(props.itemId, keyDraft.trim(), tempoDraft.trim());
+    }, 500);
+  }
+
+  return (
+    <div className="flex gap-2">
+      <div className="flex flex-1 flex-col gap-1">
+        <label className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
+          Nada (Key)
+        </label>
+        <input
+          className="w-full"
+          placeholder="mis. G"
+          value={keyDraft}
+          onChange={(e) => {
+            setKeyDraft(e.target.value);
+            scheduleSave();
+          }}
+        />
+      </div>
+      <div className="flex flex-1 flex-col gap-1">
+        <label className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
+          Tempo
+        </label>
+        <input
+          className="w-full"
+          placeholder="mis. 72"
+          value={tempoDraft}
+          onChange={(e) => {
+            setTempoDraft(e.target.value);
+            scheduleSave();
+          }}
+        />
+      </div>
     </div>
   );
 }

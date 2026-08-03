@@ -22,6 +22,10 @@ export default function LibraryPanel({
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [allTags, setAllTags] = useState<Tag[]>([]);
   const [items, setItems] = useState<LibraryItem[]>([]);
+  const [importing, setImporting] = useState(false);
+  const [importTitle, setImportTitle] = useState("");
+  const [importText, setImportText] = useState("");
+  const [importNote, setImportNote] = useState("");
 
   const refresh = useCallback((kind: KindFilter, q: string, tags: string[]) => {
     api
@@ -71,6 +75,37 @@ export default function LibraryPanel({
     } catch {
       // user canceled the file dialog
     }
+  }
+
+  async function handleImportText() {
+    const title = importTitle.trim();
+    const text = importText.trim();
+    if (!title || !text) return;
+    const existing = await api.findLibraryItemByTitle(title);
+    if (existing) {
+      if (
+        !window.confirm(
+          `Sudah ada "${existing.title}" (${existing.kind}). Buka yang sudah ada?`,
+        )
+      ) {
+        return;
+      }
+      setImporting(false);
+      setImportTitle("");
+      setImportText("");
+      setImportNote("");
+      onSelect(existing);
+      return;
+    }
+    const created = await api.createLibraryItem("song", title);
+    await api.saveSongText(created.id, text);
+    setImporting(false);
+    setImportTitle("");
+    setImportText("");
+    setImportNote("Impor berhasil.");
+    setKindFilter("all");
+    refresh("all", "", []);
+    onSelect(created);
   }
 
   return (
@@ -161,7 +196,31 @@ export default function LibraryPanel({
         <button onClick={handleImportMedia} className="flex-1 text-xs">
           + Media
         </button>
+        <button onClick={() => setImporting((v) => !v)} className="flex-1 text-xs">
+          Import
+        </button>
       </div>
+      {importing && (
+        <div className="flex flex-col gap-1.5 border-t border-surface-3 p-2">
+          <input
+            placeholder="Judul lagu"
+            value={importTitle}
+            onChange={(e) => setImportTitle(e.target.value)}
+            aria-label="Judul lagu untuk import"
+          />
+          <textarea
+            className="min-h-[120px] resize-y text-sm leading-relaxed"
+            placeholder="Tempel lirik di sini… (baris kosong = slide)"
+            value={importText}
+            onChange={(e) => setImportText(e.target.value)}
+            aria-label="Lirik untuk import"
+          />
+          <button onClick={handleImportText} className="border-brand bg-brand text-white">
+            Import
+          </button>
+          {importNote && <p className="m-0 text-xs text-live">{importNote}</p>}
+        </div>
+      )}
     </aside>
   );
 }

@@ -51,6 +51,10 @@ _Avoid_: file
 Gambar atau video latar pada sebuah **Slide** presentasi; diimpor sebagai **Media** dan disalin ke penyimpanan aplikasi.
 _Avoid_: backdrop, wallpaper
 
+**Bagian**:
+Label pembatas dalam **Urutan Ibadah** yang mengelompokkan **Item** (mis. Pembukaan, Pujian, Firman); tidak menghasilkan **Slide** dan dilewati saat **Mode Live**.
+_Avoid_: section, kelompok, header
+
 **Cue List**:
 Istilah operator untuk **Urutan Ibadah** — susunan item untuk satu penampilan.
 _Avoid_: schedule, playlist
@@ -65,6 +69,7 @@ _Avoid_: schedule, playlist
 - Sebuah **Lagu** memiliki banyak **Tag**; sebuah **Tag** melekat pada banyak **Lagu**
 - Sebuah **Slide** presentasi dapat memiliki **Background** berupa **Media** dari **Perpustakaan**
 - Sebuah **Media** dapat ditayangkan penuh layar sebagai **Item** di **Urutan Ibadah**
+- Sebuah **Urutan Ibadah** dapat memuat **Bagian** yang membagi urutan **Item**
 
 ## Example dialogue
 

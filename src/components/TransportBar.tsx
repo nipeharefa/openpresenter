@@ -10,39 +10,37 @@ export default function TransportBar({ live, projectionOpen }: TransportBarProps
   const inCue = live?.loaded && live.items.length > 0;
   return (
     <div className="z-10 flex shrink-0 items-center justify-center gap-2 border-t border-surface-3 bg-surface-2 px-4 py-2.5 shadow-lg">
-      <div className="flex items-center gap-2">
-        <button
-          className="min-w-[110px] rounded-md px-6 py-2.5 text-[15px]"
-          onClick={() => api.prevSlide()}
-          disabled={!inCue}
-        >
-          ← Prev
-        </button>
-        <button
-          className={
-            "min-w-[110px] rounded-md px-6 py-2.5 text-[15px]" +
-            (live?.black ? " border-alert bg-alert-weak text-alert" : "")
-          }
-          onClick={() => api.toggleBlack()}
-        >
-          Black
-        </button>
-        <button
-          className="min-w-[110px] rounded-md border-brand bg-brand px-6 py-2.5 text-[15px] font-semibold text-white"
-          onClick={() => api.nextSlide()}
-          disabled={!inCue}
-        >
-          Next →
-        </button>
-        <button
-          className="min-w-[110px] rounded-md border-alert px-6 py-2.5 text-[15px] text-alert hover:bg-alert hover:text-white"
-          disabled={!projectionOpen}
-          title={projectionOpen ? "" : "Buka Proyeksi dulu"}
-          onClick={() => api.stopLive()}
-        >
-          Stop Live
-        </button>
-      </div>
+      <button
+        className="min-w-[110px] rounded-md px-6 py-2.5 text-[15px]"
+        onClick={() => api.prevSlide()}
+        disabled={!inCue}
+      >
+        ← Prev
+      </button>
+      <button
+        className={
+          "min-w-[110px] rounded-md px-6 py-2.5 text-[15px]" +
+          (live?.black ? " border-alert bg-alert-weak text-alert" : "")
+        }
+        onClick={() => api.toggleBlack()}
+      >
+        Black
+      </button>
+      <button
+        className="min-w-[110px] rounded-md border-brand bg-brand px-6 py-2.5 text-[15px] font-semibold text-white"
+        onClick={() => api.nextSlide()}
+        disabled={!inCue}
+      >
+        Next →
+      </button>
+      <button
+        className="min-w-[110px] rounded-md border-alert px-6 py-2.5 text-[15px] text-alert hover:bg-alert hover:text-white"
+        disabled={!projectionOpen}
+        title={projectionOpen ? "" : "Buka Proyeksi dulu"}
+        onClick={() => api.stopLive()}
+      >
+        Stop Live
+      </button>
 
       <span className="ml-4 text-[13px] tabular-nums text-ink-muted" role="status">
         {inCue

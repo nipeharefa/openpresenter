@@ -7,6 +7,7 @@ import type {
   LiveView,
   MonitorInfo,
   PresentationSlide,
+  RestoredItem,
   Tag,
   Urutan,
 } from "../types";
@@ -14,18 +15,29 @@ import type {
 export const api = {
   listUrutan: () => invoke<Urutan[]>("list_urutan"),
   createUrutan: (name: string) => invoke<Urutan>("create_urutan", { name }),
+  renameUrutan: (id: number, name: string) =>
+    invoke<void>("rename_urutan", { id, name }),
+  duplicateUrutan: (id: number, newName: string) =>
+    invoke<Urutan>("duplicate_urutan", { id, newName }),
   deleteUrutan: (id: number) => invoke<void>("delete_urutan", { id }),
   loadUrutan: (id: number) => invoke<Urutan>("load_urutan", { id }),
   addItem: (urutanId: number, title: string, text: string) =>
     invoke<{ id: number }>("add_item", { urutanId, title, text }),
+  addSection: (urutanId: number, title: string) =>
+    invoke<void>("add_section", { urutanId, title }),
   saveItem: (id: number, title: string, text: string) =>
     invoke<void>("save_item", { id, title, text }),
   deleteItem: (id: number) => invoke<void>("delete_item", { id }),
+  duplicateItem: (id: number) => invoke<void>("duplicate_item", { id }),
+  restoreItem: (item: RestoredItem) => invoke<void>("restore_item", { item }),
   moveItem: (urutanId: number, itemId: number, newPosition: number) =>
     invoke<void>("move_item", { urutanId, itemId, newPosition }),
   nextSlide: () => invoke<void>("next_slide"),
   prevSlide: () => invoke<void>("prev_slide"),
   jumpItem: (index: number) => invoke<void>("jump_item", { index }),
+  jumpSlide: (index: number) => invoke<void>("jump_slide", { index }),
+  jumpTo: (itemIndex: number, slideIndex: number) =>
+    invoke<void>("jump_to", { itemIndex, slideIndex }),
   toggleBlack: () => invoke<void>("toggle_black"),
   openProjection: (monitor: string | null) =>
     invoke<void>("open_projection", { monitor }),
@@ -46,6 +58,10 @@ export const api = {
   deleteLibraryItem: (id: number) => invoke<void>("delete_library_item", { id }),
   saveSongText: (itemId: number, text: string) =>
     invoke<void>("save_song_text", { itemId, text }),
+  saveSongMeta: (itemId: number, songKey: string, tempo: string) =>
+    invoke<void>("save_song_meta", { itemId, songKey, tempo }),
+  findLibraryItemByTitle: (title: string) =>
+    invoke<LibraryItem | null>("find_library_item_by_title", { title }),
   addSlide: (itemId: number, title: string, body: string) =>
     invoke<PresentationSlide>("add_slide", { itemId, title, body }),
   saveSlide: (id: number, title: string, body: string) =>

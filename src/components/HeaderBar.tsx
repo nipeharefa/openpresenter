@@ -2,7 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "../lib/api";
 import type { LiveView, MonitorInfo, Urutan } from "../types";
 
+export type Screen = "library" | "setlist" | "live" | "display";
+
 interface HeaderBarProps {
+  screen: Screen;
+  onScreen: (screen: Screen) => void;
   live: LiveView | null;
   urutans: Urutan[];
   monitors: MonitorInfo[];
@@ -10,10 +14,21 @@ interface HeaderBarProps {
   onProjectionMonitor: (name: string) => void;
   onSelectUrutan: (id: number) => void;
   onDeleteUrutan: () => void;
+  onChanged: () => void;
 }
+
+const SCREENS: Screen[] = ["library", "setlist", "live", "display"];
+const SCREEN_LABELS: Record<Screen, string> = {
+  library: "Perpustakaan",
+  setlist: "Setlist",
+  live: "Live",
+  display: "Display",
+};
 
 export default function HeaderBar(props: HeaderBarProps) {
   const {
+    screen,
+    onScreen,
     live,
     urutans,
     monitors,
@@ -21,15 +36,18 @@ export default function HeaderBar(props: HeaderBarProps) {
     onProjectionMonitor,
     onSelectUrutan,
     onDeleteUrutan,
+    onChanged,
   } = props;
 
   const [adding, setAdding] = useState(false);
   const [newName, setNewName] = useState("");
+  const [renaming, setRenaming] = useState(false);
+  const [renameDraft, setRenameDraft] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (adding) inputRef.current?.focus();
-  }, [adding]);
+    if (adding || renaming) inputRef.current?.focus();
+  }, [adding, renaming]);
 
   async function handleCreate() {
     const name = newName.trim();
@@ -43,6 +61,31 @@ export default function HeaderBar(props: HeaderBarProps) {
   function cancel() {
     setAdding(false);
     setNewName("");
+    setRenaming(false);
+  }
+
+  async function startRename() {
+    setRenameDraft(live?.urutanName ?? "");
+    setRenaming(true);
+    setAdding(false);
+  }
+
+  async function handleRename() {
+    const name = renameDraft.trim();
+    if (!name || !live?.urutanId) return;
+    await api.renameUrutan(live.urutanId, name);
+    setRenaming(false);
+    onChanged();
+  }
+
+  async function handleDuplicate() {
+    if (!live?.urutanId) return;
+    const suggested = `${live.urutanName ?? "Urutan"} (salinan)`;
+    const name = window.prompt("Nama urutan baru:", suggested);
+    if (!name) return;
+    const created = await api.duplicateUrutan(live.urutanId, name.trim());
+    onSelectUrutan(created.id);
+    onChanged();
   }
 
   return (
@@ -57,7 +100,7 @@ export default function HeaderBar(props: HeaderBarProps) {
 
       <div className="flex items-center gap-1.5">
         <select
-          className="max-w-[220px]"
+          className="max-w-[200px]"
           value={live?.urutanId ?? ""}
           onChange={(e) => onSelectUrutan(Number(e.target.value))}
           aria-label="Urutan Ibadah"
@@ -71,33 +114,57 @@ export default function HeaderBar(props: HeaderBarProps) {
             </option>
           ))}
         </select>
-        {adding ? (
+        {adding || renaming ? (
           <>
             <input
               ref={inputRef}
               className="w-44"
-              placeholder="Nama urutan baru"
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
+              placeholder={renaming ? "Nama baru" : "Nama urutan baru"}
+              value={renaming ? renameDraft : newName}
+              onChange={(e) =>
+                renaming ? setRenameDraft(e.target.value) : setNewName(e.target.value)
+              }
               onKeyDown={(e) => {
-                if (e.key === "Enter") handleCreate();
+                if (e.key === "Enter") renaming ? handleRename() : handleCreate();
                 if (e.key === "Escape") cancel();
               }}
-              aria-label="Nama urutan baru"
+              aria-label={renaming ? "Nama baru urutan" : "Nama urutan baru"}
             />
-            <button onClick={handleCreate} className="border-brand bg-brand text-white">
+            <button
+              onClick={renaming ? handleRename : handleCreate}
+              className="border-brand bg-brand text-white"
+            >
               Simpan
             </button>
             <button onClick={cancel}>Batal</button>
           </>
         ) : (
-          <button
-            onClick={() => setAdding(true)}
-            aria-label="Tambah urutan"
-            title="Tambah urutan"
-          >
-            +
-          </button>
+          <>
+            <button
+              onClick={() => setAdding(true)}
+              disabled={!live?.loaded}
+              aria-label="Tambah urutan"
+              title="Tambah urutan"
+            >
+              +
+            </button>
+            <button
+              onClick={startRename}
+              disabled={!live?.loaded}
+              aria-label="Ubah nama urutan"
+              title="Ubah nama urutan"
+            >
+              ✎
+            </button>
+            <button
+              onClick={handleDuplicate}
+              disabled={!live?.loaded}
+              aria-label="Duplikat urutan"
+              title="Duplikat urutan"
+            >
+              ⧉
+            </button>
+          </>
         )}
         <button
           onClick={onDeleteUrutan}
@@ -113,7 +180,7 @@ export default function HeaderBar(props: HeaderBarProps) {
 
       <div className="ml-1.5 flex items-center gap-1.5 border-l border-surface-3 pl-3">
         <select
-          className="max-w-[220px]"
+          className="max-w-[190px]"
           value={projectionMonitor}
           onChange={(e) => onProjectionMonitor(e.target.value)}
           disabled={monitors.length === 0}
@@ -131,6 +198,21 @@ export default function HeaderBar(props: HeaderBarProps) {
         <button onClick={() => api.openProjection(projectionMonitor || null)}>
           Proyeksi
         </button>
+      </div>
+
+      <div className="flex overflow-hidden rounded-md border border-surface-3 bg-surface-2">
+        {SCREENS.map((s) => (
+          <button
+            key={s}
+            className={
+              "border-none bg-transparent px-3 py-1.5 text-xs text-ink-muted hover:border-none hover:text-ink" +
+              (screen === s ? " bg-brand-weak text-brand" : "")
+            }
+            onClick={() => onScreen(s)}
+          >
+            {SCREEN_LABELS[s]}
+          </button>
+        ))}
       </div>
     </header>
   );
