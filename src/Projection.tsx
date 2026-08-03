@@ -15,7 +15,7 @@ export default function Projection() {
   const black = !live || !live.loaded || live.black;
 
   return (
-    <div className="proj">
+    <div className="proj layer-overlay">
       {!black && (
         <div
           key={`${live?.itemIndex}:${live?.slideIndex}`}
