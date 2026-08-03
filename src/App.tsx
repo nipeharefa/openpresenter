@@ -99,7 +99,7 @@ export default function App() {
 
   return (
     <div className="app">
-      <header className="topbar">
+      <header className="topbar layer-surface-1">
         <span className="brand">
           <span className="brand__dot" aria-hidden="true" />
           OpenPresenter
@@ -272,7 +272,7 @@ function EditView(props: {
 
   return (
     <div className="edit">
-      <aside className="edit__list">
+      <aside className="edit__list layer-surface-1">
         <div className="edit__list-head">
           <span>Item</span>
           <button onClick={props.onAdd} disabled={!live?.loaded}>
@@ -518,7 +518,7 @@ function LibraryView(props: {
 
   return (
     <div className="lib">
-      <aside className="lib__list">
+      <aside className="lib__list layer-surface-1">
         <div className="lib__toolbar">
           <input
             placeholder="Cari judul…"
@@ -685,7 +685,7 @@ function LiveView(props: {
 
   return (
     <div className="live">
-      <aside className="live__list">
+      <aside className="live__list layer-surface-1">
         {live.items.map((it, index) => (
           <button
             key={it.id}
@@ -713,7 +713,7 @@ function LiveView(props: {
           </span>
         </div>
 
-        <div className="live__screen">
+        <div className="live__screen layer-overlay">
           {live.black ? (
             <span className="live__black-label">Layar Hitam</span>
           ) : (
@@ -726,7 +726,7 @@ function LiveView(props: {
           )}
         </div>
 
-        <div className="dock">
+        <div className="dock layer-elevated">
           <button className="ctrl" onClick={() => api.prevSlide()}>
             ← Prev
           </button>
