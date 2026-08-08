@@ -5,6 +5,11 @@ export interface Urutan {
 
 export type Mode = "edit" | "library" | "live";
 
+export type Selection =
+  | { type: "library"; id: number }
+  | { type: "cue"; id: number }
+  | null;
+
 export interface SlideBackgroundContent {
   mediaType: string;
   storedName: string;
@@ -23,6 +28,7 @@ export interface LiveItem {
   libraryItemId: number | null;
   kind: string | null;
   slides: SlideContent[];
+  isSection: boolean;
 }
 
 export interface LiveView {
@@ -35,6 +41,9 @@ export interface LiveView {
   slideText: string;
   black: boolean;
   items: LiveItem[];
+  nextItemTitle: string | null;
+  nextSlideText: string;
+  nextBackground: SlideBackgroundContent | null;
 }
 
 export interface MonitorInfo {
@@ -86,6 +95,18 @@ export interface LibraryItemDetail {
   title: string;
   tags: Tag[];
   text: string;
+  songKey: string;
+  tempo: string;
   slides: PresentationSlide[];
   media: MediaInfo | null;
+}
+
+export interface RestoredItem {
+  id: number;
+  urutanId: number;
+  position: number;
+  title: string;
+  text: string;
+  libraryItemId: number | null;
+  isSection: boolean;
 }

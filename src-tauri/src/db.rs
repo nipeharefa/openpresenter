@@ -1,6 +1,18 @@
 use rusqlite::{params, params_from_iter, Connection, OptionalExtension, ToSql};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct RestoredItem {
+    pub id: i64,
+    pub urutan_id: i64,
+    pub position: i64,
+    pub title: String,
+    pub text: String,
+    pub library_item_id: Option<i64>,
+    pub is_section: bool,
+}
 
 #[derive(Serialize, Clone, Debug)]
 pub struct Urutan {
@@ -18,6 +30,7 @@ pub struct Item {
     pub library_item_id: Option<i64>,
     pub kind: Option<String>,
     pub slides: Vec<Slide>,
+    pub is_section: bool,
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -69,6 +82,8 @@ pub struct LibraryItemDetail {
     pub title: String,
     pub tags: Vec<Tag>,
     pub text: String,
+    pub song_key: String,
+    pub tempo: String,
     pub slides: Vec<PresentationSlide>,
     pub media: Option<MediaItem>,
 }
@@ -228,6 +243,16 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
         )?;
         conn.pragma_update(None, "foreign_keys", "ON")?;
     }
+    if version < 5 {
+        conn.execute_batch(
+            "BEGIN;
+            ALTER TABLE item ADD COLUMN is_section INTEGER NOT NULL DEFAULT 0;
+            ALTER TABLE song_data ADD COLUMN song_key TEXT NOT NULL DEFAULT '';
+            ALTER TABLE song_data ADD COLUMN tempo TEXT NOT NULL DEFAULT '';
+            PRAGMA user_version = 5;
+            COMMIT;",
+        )?;
+    }
     Ok(())
 }
 
@@ -268,6 +293,48 @@ pub fn delete_urutan(conn: &Connection, id: i64) -> rusqlite::Result<()> {
     Ok(())
 }
 
+pub fn rename_urutan(conn: &Connection, id: i64, name: &str) -> rusqlite::Result<()> {
+    conn.execute(
+        "UPDATE urutan SET name = ?1, updated_at = datetime('now') WHERE id = ?2",
+        params![name, id],
+    )?;
+    Ok(())
+}
+
+pub fn duplicate_urutan(conn: &mut Connection, id: i64, new_name: &str) -> rusqlite::Result<Urutan> {
+    let tx = conn.transaction()?;
+    tx.execute("INSERT INTO urutan (name) VALUES (?1)", params![new_name])?;
+    let new_id = tx.last_insert_rowid();
+    let rows = {
+        let mut stmt = tx.prepare(
+            "SELECT position, title, text, library_item_id, is_section
+             FROM item WHERE urutan_id = ?1 ORDER BY position",
+        )?;
+        let rows = stmt.query_map(params![id], |r| {
+            Ok((
+                r.get::<_, i64>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, Option<i64>>(3)?,
+                r.get::<_, i64>(4)?,
+            ))
+        })?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()?
+    };
+    for (position, title, text, lib, sec) in rows {
+        tx.execute(
+            "INSERT INTO item (urutan_id, position, title, text, library_item_id, is_section)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![new_id, position, title, text, lib, sec],
+        )?;
+    }
+    tx.commit()?;
+    Ok(Urutan {
+        id: new_id,
+        name: new_name.to_string(),
+    })
+}
+
 fn fetch_slides(conn: &Connection, item: &Item) -> rusqlite::Result<Vec<Slide>> {
     match item.kind.as_deref() {
         Some("presentation") => match item.library_item_id {
@@ -288,7 +355,8 @@ pub fn list_items(conn: &Connection, urutan_id: i64) -> rusqlite::Result<Vec<Ite
                 COALESCE(l.title, i.title) AS title,
                 COALESCE(sd.text, i.text) AS text,
                 i.library_item_id,
-                l.kind
+                l.kind,
+                i.is_section
          FROM item i
          LEFT JOIN library_item l ON l.id = i.library_item_id
          LEFT JOIN song_data sd ON sd.item_id = i.library_item_id
@@ -304,6 +372,7 @@ pub fn list_items(conn: &Connection, urutan_id: i64) -> rusqlite::Result<Vec<Ite
             library_item_id: r.get(5)?,
             kind: r.get(6)?,
             slides: Vec::new(),
+            is_section: r.get::<_, i64>(7)? != 0,
         })
     })?;
     let mut items = Vec::new();
@@ -321,7 +390,8 @@ pub fn get_item(conn: &Connection, id: i64) -> rusqlite::Result<Option<Item>> {
                 COALESCE(l.title, i.title) AS title,
                 COALESCE(sd.text, i.text) AS text,
                 i.library_item_id,
-                l.kind
+                l.kind,
+                i.is_section
          FROM item i
          LEFT JOIN library_item l ON l.id = i.library_item_id
          LEFT JOIN song_data sd ON sd.item_id = i.library_item_id
@@ -337,6 +407,7 @@ pub fn get_item(conn: &Connection, id: i64) -> rusqlite::Result<Option<Item>> {
             library_item_id: r.get(5)?,
             kind: r.get(6)?,
             slides: Vec::new(),
+            is_section: r.get::<_, i64>(7)? != 0,
         })
     })?;
     let mut item = match rows.next().transpose()? {
@@ -361,6 +432,20 @@ pub fn add_item(
     conn.execute(
         "INSERT INTO item (urutan_id, position, title, text) VALUES (?1, ?2, ?3, ?4)",
         params![urutan_id, position, title, text],
+    )?;
+    let id = conn.last_insert_rowid();
+    get_item(conn, id)?.ok_or(rusqlite::Error::QueryReturnedNoRows)
+}
+
+pub fn add_section(conn: &Connection, urutan_id: i64, title: &str) -> rusqlite::Result<Item> {
+    let position: i64 = conn.query_row(
+        "SELECT COALESCE(MAX(position), -1) + 1 FROM item WHERE urutan_id = ?1",
+        params![urutan_id],
+        |r| r.get(0),
+    )?;
+    conn.execute(
+        "INSERT INTO item (urutan_id, position, title, text, is_section) VALUES (?1, ?2, ?3, '', 1)",
+        params![urutan_id, position, title],
     )?;
     let id = conn.last_insert_rowid();
     get_item(conn, id)?.ok_or(rusqlite::Error::QueryReturnedNoRows)
@@ -401,6 +486,69 @@ pub fn save_item(conn: &Connection, id: i64, title: &str, text: &str) -> rusqlit
 pub fn delete_item(conn: &Connection, id: i64) -> rusqlite::Result<()> {
     conn.execute("DELETE FROM item WHERE id = ?1", params![id])?;
     Ok(())
+}
+
+pub fn duplicate_item(conn: &mut Connection, id: i64) -> rusqlite::Result<Item> {
+    let (urutan_id, position, title, text, library_item_id, is_section): (
+        i64,
+        i64,
+        String,
+        String,
+        Option<i64>,
+        bool,
+    ) = conn.query_row(
+        "SELECT urutan_id, position, title, text, library_item_id, is_section FROM item WHERE id = ?1",
+        params![id],
+        |r| {
+            Ok((
+                r.get(0)?,
+                r.get(1)?,
+                r.get(2)?,
+                r.get(3)?,
+                r.get(4)?,
+                r.get::<_, i64>(5)? != 0,
+            ))
+        },
+    )?;
+    let tx = conn.transaction()?;
+    tx.execute(
+        "UPDATE item SET position = position + 1 WHERE urutan_id = ?1 AND position > ?2",
+        params![urutan_id, position],
+    )?;
+    tx.execute(
+        "INSERT INTO item (urutan_id, position, title, text, library_item_id, is_section)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        params![urutan_id, position + 1, title, text, library_item_id, is_section as i64],
+    )?;
+    let new_id = tx.last_insert_rowid();
+    tx.commit()?;
+    get_item(conn, new_id)?.ok_or(rusqlite::Error::QueryReturnedNoRows)
+}
+
+pub fn restore_item(
+    conn: &mut Connection,
+    item: &RestoredItem,
+) -> rusqlite::Result<Item> {
+    let tx = conn.transaction()?;
+    tx.execute(
+        "UPDATE item SET position = position + 1 WHERE urutan_id = ?1 AND position >= ?2",
+        params![item.urutan_id, item.position],
+    )?;
+    tx.execute(
+        "INSERT INTO item (id, urutan_id, position, title, text, library_item_id, is_section)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        params![
+            item.id,
+            item.urutan_id,
+            item.position,
+            item.title,
+            item.text,
+            item.library_item_id,
+            item.is_section as i64
+        ],
+    )?;
+    tx.commit()?;
+    get_item(conn, item.id)?.ok_or(rusqlite::Error::QueryReturnedNoRows)
 }
 
 pub fn reorder_item(
@@ -528,15 +676,22 @@ pub fn get_library_item_detail(
     match row {
         Some((id, kind, title)) => {
             let tags = list_item_tags(conn, id)?;
-            let text = if kind == "song" {
+            let (text, song_key, tempo) = if kind == "song" {
                 conn.query_row(
-                    "SELECT COALESCE(text, '') FROM song_data WHERE item_id = ?1",
+                    "SELECT COALESCE(text, ''), COALESCE(song_key, ''), COALESCE(tempo, '')
+                     FROM song_data WHERE item_id = ?1",
                     params![id],
-                    |r| r.get(0),
+                    |r| {
+                        Ok((
+                            r.get::<_, String>(0)?,
+                            r.get::<_, String>(1)?,
+                            r.get::<_, String>(2)?,
+                        ))
+                    },
                 )
                 .unwrap_or_default()
             } else {
-                String::new()
+                (String::new(), String::new(), String::new())
             };
             let slides = if kind == "presentation" {
                 list_presentation_slides(conn, id)?
@@ -550,6 +705,8 @@ pub fn get_library_item_detail(
                 title,
                 tags,
                 text,
+                song_key,
+                tempo,
                 slides,
                 media,
             }))
@@ -681,6 +838,73 @@ pub fn save_song_text(conn: &Connection, item_id: i64, text: &str) -> rusqlite::
         params![item_id, text],
     )?;
     Ok(())
+}
+
+pub fn save_song_meta(
+    conn: &Connection,
+    item_id: i64,
+    song_key: &str,
+    tempo: &str,
+) -> rusqlite::Result<()> {
+    conn.execute(
+        "INSERT INTO song_data (item_id, song_key, tempo) VALUES (?1, ?2, ?3)
+         ON CONFLICT(item_id) DO UPDATE SET song_key = ?2, tempo = ?3",
+        params![item_id, song_key, tempo],
+    )?;
+    Ok(())
+}
+
+pub fn find_library_item_by_title(
+    conn: &Connection,
+    title: &str,
+) -> rusqlite::Result<Option<LibraryItem>> {
+    let t = title.trim();
+    if t.is_empty() {
+        return Ok(None);
+    }
+    let like = format!("%{t}%");
+    let mut stmt = conn.prepare(
+        "SELECT id, kind, title FROM library_item
+         WHERE title = ?1 COLLATE NOCASE
+         ORDER BY CASE kind WHEN 'song' THEN 0 WHEN 'presentation' THEN 1 ELSE 2 END
+         LIMIT 1",
+    )?;
+    let mut rows = stmt.query_map(params![t], |r| {
+        Ok((
+            r.get::<_, i64>(0)?,
+            r.get::<_, String>(1)?,
+            r.get::<_, String>(2)?,
+        ))
+    })?;
+    if let Some(row) = rows.next().transpose()? {
+        return Ok(Some(row_to_library_item(conn, row)?));
+    }
+    let mut stmt = conn.prepare(
+        "SELECT id, kind, title FROM library_item
+         WHERE title LIKE ?1 COLLATE NOCASE
+         ORDER BY CASE kind WHEN 'song' THEN 0 WHEN 'presentation' THEN 1 ELSE 2 END
+         LIMIT 1",
+    )?;
+    let mut rows = stmt.query_map(params![like], |r| {
+        Ok((
+            r.get::<_, i64>(0)?,
+            r.get::<_, String>(1)?,
+            r.get::<_, String>(2)?,
+        ))
+    })?;
+    rows.next()
+        .transpose()?
+        .map(|row| row_to_library_item(conn, row))
+        .transpose()
+}
+
+fn row_to_library_item(
+    conn: &Connection,
+    row: (i64, String, String),
+) -> rusqlite::Result<LibraryItem> {
+    let (id, kind, title) = row;
+    let tags = list_item_tags(conn, id)?;
+    Ok(LibraryItem { id, kind, title, tags })
 }
 
 pub fn list_presentation_slides(
@@ -1042,5 +1266,55 @@ mod tests {
 
         let stored = delete_library_item(&conn, m.id).unwrap();
         assert_eq!(stored.as_deref(), Some("abc123.png"));
+    }
+
+    #[test]
+    fn section_duplicate_restore_rename() {
+        let mut conn = test_conn();
+        let u = create_urutan(&conn, "U").unwrap();
+        let i1 = add_item(&conn, u.id, "Satu", "A\n\nB").unwrap();
+        let sec = add_section(&conn, u.id, "Pujian").unwrap();
+        assert!(sec.is_section);
+
+        let dup = duplicate_item(&mut conn, i1.id).unwrap();
+        let items = list_items(&conn, u.id).unwrap();
+        assert_eq!(items.len(), 3);
+        assert!(items.iter().any(|i| i.id == dup.id));
+
+        let deleted = get_item(&conn, dup.id).unwrap().unwrap();
+        delete_item(&conn, dup.id).unwrap();
+        restore_item(
+            &mut conn,
+            &RestoredItem {
+                id: deleted.id,
+                urutan_id: deleted.urutan_id,
+                position: deleted.position,
+                title: deleted.title.clone(),
+                text: deleted.text.clone(),
+                library_item_id: deleted.library_item_id,
+                is_section: deleted.is_section,
+            },
+        )
+        .unwrap();
+        assert_eq!(list_items(&conn, u.id).unwrap().len(), 3);
+
+        let u2 = duplicate_urutan(&mut conn, u.id, "U2").unwrap();
+        assert_eq!(list_items(&conn, u2.id).unwrap().len(), 3);
+        rename_urutan(&conn, u.id, "U1").unwrap();
+        assert_eq!(get_urutan(&conn, u.id).unwrap().unwrap().name, "U1");
+    }
+
+    #[test]
+    fn song_meta_and_dup_detect() {
+        let conn = test_conn();
+        let s = create_library_item(&conn, "song", "Ku Puji").unwrap();
+        save_song_meta(&conn, s.id, "G", "72").unwrap();
+        let d = get_library_item_detail(&conn, s.id).unwrap().unwrap();
+        assert_eq!(d.song_key, "G");
+        assert_eq!(d.tempo, "72");
+
+        let found = find_library_item_by_title(&conn, "ku puji").unwrap().unwrap();
+        assert_eq!(found.id, s.id);
+        assert!(find_library_item_by_title(&conn, "tidak ada").unwrap().is_none());
     }
 }

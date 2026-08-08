@@ -27,6 +27,7 @@ fn to_live_item(item: db::Item) -> LiveItem {
         library_item_id: item.library_item_id,
         kind: item.kind,
         slides: item.slides,
+        is_section: item.is_section,
     }
 }
 
@@ -91,6 +92,18 @@ pub fn delete_urutan(
         emit_view(&app, &live)?;
     }
     Ok(())
+}
+
+#[tauri::command]
+pub fn rename_urutan(app: AppHandle, id: i64, name: String) -> Result<(), String> {
+    let conn = db::connect(&app).map_err(db_error)?;
+    db::rename_urutan(&conn, id, &name).map_err(db_error)
+}
+
+#[tauri::command]
+pub fn duplicate_urutan(app: AppHandle, id: i64, new_name: String) -> Result<db::Urutan, String> {
+    let mut conn = db::connect(&app).map_err(db_error)?;
+    db::duplicate_urutan(&mut conn, id, &new_name).map_err(db_error)
 }
 
 #[tauri::command]
@@ -183,6 +196,44 @@ pub fn delete_item(
 }
 
 #[tauri::command]
+pub fn add_section(
+    app: AppHandle,
+    state: State<'_, Mutex<LiveState>>,
+    urutan_id: i64,
+    title: String,
+) -> Result<db::Item, String> {
+    let conn = db::connect(&app).map_err(db_error)?;
+    let item = db::add_section(&conn, urutan_id, &title).map_err(db_error)?;
+    reload_if_current(&app, &state, urutan_id)?;
+    Ok(item)
+}
+
+#[tauri::command]
+pub fn duplicate_item(
+    app: AppHandle,
+    state: State<'_, Mutex<LiveState>>,
+    id: i64,
+) -> Result<db::Item, String> {
+    let mut conn = db::connect(&app).map_err(db_error)?;
+    let mut item = db::duplicate_item(&mut conn, id).map_err(db_error)?;
+    resolve_item_paths(&app, std::slice::from_mut(&mut item));
+    reload_if_current(&app, &state, item.urutan_id)?;
+    Ok(item)
+}
+
+#[tauri::command]
+pub fn restore_item(
+    app: AppHandle,
+    state: State<'_, Mutex<LiveState>>,
+    item: db::RestoredItem,
+) -> Result<db::Item, String> {
+    let mut conn = db::connect(&app).map_err(db_error)?;
+    let restored = db::restore_item(&mut conn, &item).map_err(db_error)?;
+    reload_if_current(&app, &state, restored.urutan_id)?;
+    Ok(restored)
+}
+
+#[tauri::command]
 pub fn move_item(
     app: AppHandle,
     state: State<'_, Mutex<LiveState>>,
@@ -207,6 +258,7 @@ pub fn next_slide(app: AppHandle, state: State<'_, Mutex<LiveState>>) -> Result<
     } else {
         live.item_index += 1;
         live.slide_index = 0;
+        live.skip_sections_forward();
     }
     emit_view(&app, &live)
 }
@@ -219,8 +271,8 @@ pub fn prev_slide(app: AppHandle, state: State<'_, Mutex<LiveState>>) -> Result<
     }
     if live.slide_index > 0 {
         live.slide_index -= 1;
-    } else {
-        live.item_index -= 1;
+    } else if let Some(prev) = live.prev_playable_index(live.item_index) {
+        live.item_index = prev;
         live.slide_index = live.slide_count().saturating_sub(1);
     }
     emit_view(&app, &live)
@@ -238,6 +290,38 @@ pub fn jump_item(
     }
     live.item_index = index;
     live.slide_index = 0;
+    live.skip_sections_forward();
+    if live.item_index >= live.items.len() {
+        live.item_index = live.items.len().saturating_sub(1);
+    }
+    emit_view(&app, &live)
+}
+
+#[tauri::command]
+pub fn jump_slide(app: AppHandle, state: State<'_, Mutex<LiveState>>, index: usize) -> Result<(), String> {
+    let mut live = state.lock().unwrap();
+    if index >= live.slide_count() {
+        return Ok(());
+    }
+    live.slide_index = index;
+    emit_view(&app, &live)
+}
+
+#[tauri::command]
+pub fn jump_to(
+    app: AppHandle,
+    state: State<'_, Mutex<LiveState>>,
+    item_index: usize,
+    slide_index: usize,
+) -> Result<(), String> {
+    let mut live = state.lock().unwrap();
+    if item_index >= live.items.len() {
+        return Ok(());
+    }
+    live.item_index = item_index;
+    live.skip_sections_forward();
+    let count = live.slide_count();
+    live.slide_index = slide_index.min(count.saturating_sub(1));
     emit_view(&app, &live)
 }
 
@@ -291,6 +375,9 @@ pub fn open_projection(
         .inner_size(width, height)
         .position(x, y)
         .background_color(tauri::window::Color(0, 0, 0, 255))
+        .additional_browser_args(
+            "--disable-background-timer-throttling --disable-renderer-backgrounding --disable-backgrounding-occluded-windows",
+        )
         .build()
         .map_err(|e| e.to_string())?;
     window.set_fullscreen(true).map_err(|e| e.to_string())?;
@@ -502,6 +589,31 @@ pub fn save_song_text(
         reload_if_current(&app, &state, urutan_id)?;
     }
     Ok(())
+}
+
+#[tauri::command]
+pub fn save_song_meta(
+    app: AppHandle,
+    state: State<'_, Mutex<LiveState>>,
+    item_id: i64,
+    song_key: String,
+    tempo: String,
+) -> Result<(), String> {
+    let conn = db::connect(&app).map_err(db_error)?;
+    db::save_song_meta(&conn, item_id, &song_key, &tempo).map_err(db_error)?;
+    if let Some(urutan_id) = current_urutan_if_refs_item(&app, item_id) {
+        reload_if_current(&app, &state, urutan_id)?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn find_library_item_by_title(
+    app: AppHandle,
+    title: String,
+) -> Result<Option<db::LibraryItem>, String> {
+    let conn = db::connect(&app).map_err(db_error)?;
+    db::find_library_item_by_title(&conn, &title).map_err(db_error)
 }
 
 #[tauri::command]
